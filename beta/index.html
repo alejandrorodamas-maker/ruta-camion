@@ -119,7 +119,10 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 #navbtns button{flex:1;padding:10px 6px}
 #bmute{flex:none!important;width:52px;font-size:20px}
 #bmute.off,#fmute.off{background:#7c2d12}
-#brec{pointer-events:auto;position:absolute;right:12px;bottom:calc(150px + var(--sab));display:none;border-radius:999px;box-shadow:0 3px 12px #0008}
+#navfabs{pointer-events:auto;position:absolute;right:12px;bottom:calc(150px + var(--sab));display:flex;flex-direction:column;gap:10px}
+#navfabs .fab{width:52px;height:52px;font-size:23px}
+.pz{font-size:11px;background:#4c1d95;color:#ede9fe;border-radius:999px;padding:1px 7px;white-space:nowrap}
+#brec{pointer-events:auto;position:absolute;left:12px;bottom:calc(150px + var(--sab));display:none;border-radius:999px;box-shadow:0 3px 12px #0008}
 
 .stopmk{width:26px;height:26px;border-radius:50%;background:#f59e0b;color:#111;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;box-shadow:0 2px 6px #0008}
 .pausemk{width:30px;height:30px;border-radius:50%;background:#7c3aed;color:#fff;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-weight:800;box-shadow:0 2px 6px #0008}
@@ -155,7 +158,9 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
   .stat b{font-size:17px}
   #navbtns{margin-top:6px}
   #navbtns button{padding:7px 6px}
-  #brec{right:calc(12px + var(--sar));bottom:calc(12px + var(--sab))}
+  #brec{left:auto;right:calc(76px + var(--sar));bottom:calc(12px + var(--sab))}
+  #navfabs{right:calc(12px + var(--sar));bottom:calc(12px + var(--sab));gap:8px}
+  #navfabs .fab{width:46px;height:46px;font-size:20px}
   #toast{left:auto;right:calc(12px + var(--sar));transform:none;top:calc(12px + var(--sat))}
   #toast.on{transform:none}
 }
@@ -207,6 +212,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
     <button class="go" id="bnav">▶ Iniciar</button>
     <button class="sec" id="bfav">⭐ Guardar destino</button>
   </div>
+  <div class="row"><button class="sec" id="bstops">🅿️ Dónde parar en la ruta</button></div>
   <details><summary id="stepsum">Indicaciones</summary><div id="steps"></div></details>
 </div>
 
@@ -225,6 +231,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
     <div id="offer"><div id="offtxt"></div><div class="row"><button class="go" id="offyes">Cambiar</button><button class="sec" id="offno">Seguir igual</button></div></div>
   </div>
   <button id="brec" class="sec">◎ Centrar</button>
+  <div id="navfabs"><button class="fab" id="nstop" title="Dónde parar">🅿️</button><button class="fab" id="nfav" title="Guardar este sitio en favoritos">⭐</button></div>
   <div id="navbot">
     <div id="navstats">
       <div id="spdbox"><b id="nvkmh">–</b><small>km/h</small></div>
@@ -283,7 +290,16 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 <div class="sheet" id="favs">
   <h3>Favoritos <button class="x">Cerrar</button></h3>
   <div class="note" style="margin:0 0 6px">Al tocar uno se usa según la pestaña elegida arriba (Destino, Parada u Origen).</div>
+  <button class="poibtn" id="favhere">📍 Guardar mi ubicación actual</button>
   <div id="favlist"></div>
+  <div class="note">También puedes mantener pulsado cualquier punto del mapa para guardarlo, ir o añadirlo como parada.</div>
+</div>
+
+<div class="sheet" id="stopsheet">
+  <h3>Dónde parar en tu ruta <button class="x">Cerrar</button></h3>
+  <div id="stopres"></div>
+  <button class="poibtn" id="stopclear" style="background:#3f1d1d">Quitar marcas del mapa</button>
+  <div class="note">Parkings de camiones, paradas de camión y áreas de descanso a menos de 10 minutos de desvío en los próximos 300 km. 🟣 = cerca de la hora de tu pausa. Comprueba en el sitio que admite camiones y si hay hueco.</div>
 </div>
 
 <div class="sheet" id="poi">
@@ -300,7 +316,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 
 <script>
 "use strict";
-const VER="3.2";
+const VER="3.3";
 const BETA=location.pathname.indexOf("/beta/")>=0;
 const TT="https://api.tomtom.com";
 const $=id=>document.getElementById(id);
@@ -732,7 +748,7 @@ function renderCard(){
 }
 function clearRoute(){
   shape=[];cum=[];ins=[];insD=[];sum=null;dest=null;stops=[];origin=null;legEnds=[];spd=[];lanesS=[];trafS=[];alts=[];altSel=0;
-  pauseMk.forEach(m=>m.remove());pauseMk=[];pauseT=[];clearOffer();
+  pauseMk.forEach(m=>m.remove());pauseMk=[];pauseT=[];clearOffer();clearStopMk();
   setRouteSource();refreshMarkers();$("card").style.display="none";
   document.documentElement.style.setProperty("--cardh","0px");
 }
@@ -741,20 +757,116 @@ $("cx").onclick=clearRoute;
 /* ---------- Favoritos ---------- */
 function renderFavs(){
   const el=$("favlist");el.innerHTML="";
-  if(!S.favs.length){el.textContent="Aún no tienes favoritos. Elige un destino y pulsa «Guardar destino».";return}
+  if(!S.favs.length){el.textContent="Aún no tienes favoritos. Usa «Guardar mi ubicación», «Guardar destino», el ⭐ al navegar o mantén pulsado el mapa.";return}
   S.favs.forEach((f,i)=>{
     const row=document.createElement("div");row.className="favrow";
-    const sp=document.createElement("span");sp.textContent="⭐ "+f.name;sp.onclick=()=>applyPlace(f,target);
+    const sp=document.createElement("span");sp.textContent="⭐ "+f.name+(me?` · ${fmtD(hav([me.lon,me.lat],[f.lon,f.lat]))}`:"");sp.onclick=()=>applyPlace(f,target);
+    const r=document.createElement("button");r.textContent="✏️";r.onclick=()=>{const n=prompt("Nuevo nombre",f.name);if(n){f.name=n.slice(0,40);save();renderFavs()}};
     const b=document.createElement("button");b.textContent="✕";b.onclick=()=>{if(confirm("¿Quitar de favoritos?")){S.favs.splice(i,1);save();renderFavs()}};
-    row.append(sp,b);el.appendChild(row);
+    row.append(sp,r,b);el.appendChild(row);
   });
 }
+async function reverseName(lat,lon){
+  if(!S.key)return"";
+  try{uso("busq");const r=await fetch(`${TT}/search/2/reverseGeocode/${lat.toFixed(6)},${lon.toFixed(6)}.json?key=${S.key}&language=es-ES&radius=200`);const j=await r.json();
+    const a=j.addresses&&j.addresses[0]&&j.addresses[0].address;if(!a)return"";
+    return a.streetName?a.streetName+(a.municipality?", "+a.municipality:""):(a.freeformAddress||"")}catch(e){return""}
+}
+async function saveFavAt(lat,lon,suggest){
+  let def=suggest||await reverseName(lat,lon);
+  if(!def)def="Sitio "+new Date().toLocaleString("es-ES",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const n=prompt("Nombre del favorito",def);if(!n)return;
+  S.favs.push({name:n.slice(0,40),lat,lon,t:Date.now()});save();toast("⭐ Guardado en favoritos");
+  if($("favs").classList.contains("open"))renderFavs();
+}
 $("ffav").onclick=()=>{renderFavs();openSheet("favs")};
-$("bfav").onclick=()=>{
-  if(!dest)return;
-  const n=prompt("Nombre del favorito",shortName(dest));if(!n)return;
-  S.favs.push({name:n.slice(0,40),lat:dest.lat,lon:dest.lon});save();toast("Guardado en favoritos");
-};
+$("bfav").onclick=()=>{if(dest)saveFavAt(dest.lat,dest.lon,shortName(dest))};
+$("favhere").onclick=async()=>{await getPos();if(me)saveFavAt(me.lat,me.lon)};
+$("nfav").onclick=()=>{if(!me){toast("Todavía no hay señal GPS");return}saveFavAt(me.lat,me.lon)};
+
+/* ---------- Mantener pulsado el mapa: ir, añadir parada o guardar ---------- */
+let lpT=null,lpPt=null,lpPop=null;
+function longPress(ll){
+  if(navOn)return;
+  const pl={lat:ll.lat,lon:ll.lng,name:`Punto del mapa (${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)})`};
+  const box=document.createElement("div");
+  const t=document.createElement("b");t.textContent="Punto elegido";box.appendChild(t);box.appendChild(document.createElement("br"));
+  const mk=(txt,fn,sec)=>{const b=document.createElement("button");b.textContent=txt;if(sec){b.className="sec";b.style.color="#fff"}b.onclick=()=>{if(lpPop)lpPop.remove();fn()};box.appendChild(b)};
+  mk("Ir aquí",()=>applyPlace(pl,"dest"));
+  mk("+ Parada",()=>applyPlace(pl,"stop"),1);
+  mk("⭐ Guardar",()=>saveFavAt(pl.lat,pl.lon),1);
+  if(lpPop)lpPop.remove();
+  lpPop=new maplibregl.Popup({offset:8}).setLngLat(ll).setDOMContent(box).addTo(map);
+}
+map.on("touchstart",e=>{clearTimeout(lpT);const oe=e.originalEvent;if(oe&&oe.touches&&oe.touches.length>1)return;const ll=e.lngLat;lpPt=e.point;lpT=setTimeout(()=>longPress(ll),650)});
+map.on("touchmove",e=>{if(lpPt&&(Math.abs(e.point.x-lpPt.x)>10||Math.abs(e.point.y-lpPt.y)>10))clearTimeout(lpT)});
+map.on("touchend",()=>clearTimeout(lpT));
+map.on("touchcancel",()=>clearTimeout(lpT));
+map.on("movestart",()=>clearTimeout(lpT));
+map.on("contextmenu",e=>longPress(e.lngLat));
+
+/* ---------- Dónde parar: parkings de camión y áreas por delante en la ruta ---------- */
+const STOPQ=[["truck stop","🚛"],["parking camiones","🅿️"],["área de descanso","🛏️"]];
+let stopMk=[];
+function clearStopMk(){stopMk.forEach(m=>m.remove());stopMk=[]}
+async function findStops(){
+  if(!shape.length){toast("Primero calcula una ruta");return}
+  if(!S.key){fillCfg();openSheet("cfg");toast("Pega primero tu clave de TomTom");return}
+  const from=navOn?navIdx:0,pos0=cum[from],AHEAD=300000;
+  const pts=[];let last=null,end=from;
+  for(let i=from;i<shape.length&&cum[i]-pos0<=AHEAD;i++){end=i;const p=shape[i];if(!last||hav(last,p)>=300||i===shape.length-1){pts.push(p);last=p}}
+  if(pts.length<2||cum[end]-pos0<2000){toast("Ya casi has llegado");return}
+  openSheet("stopsheet");$("stopres").textContent=`Buscando sitios para parar en los próximos ${Math.round((cum[end]-pos0)/1000)} km…`;
+  const body=JSON.stringify({route:{points:pts.map(p=>({lat:+p[1].toFixed(6),lon:+p[0].toFixed(6)}))}});
+  const res=await Promise.all(STOPQ.map(([q,e])=>{uso("busq");
+    return fetch(`${TT}/search/2/searchAlongRoute/${encodeURIComponent(q)}.json?key=${S.key}&maxDetourTime=600&limit=20&language=es-ES`,{method:"POST",headers:{"Content-Type":"application/json"},body})
+      .then(r=>r.ok?r.json():{results:[]}).then(j=>(j.results||[]).map(x=>({x,e}))).catch(()=>[])}));
+  const list=[];
+  for(const arr of res)for(const{x,e}of arr){
+    const lat=x.position.lat,lon=x.position.lon,p=[lon,lat];
+    if(list.some(o=>hav([o.lon,o.lat],p)<150))continue;
+    let bi=from,bd=Infinity;for(let i=from;i<=end;i++){const d=hav(shape[i],p);if(d<bd){bd=d;bi=i}}
+    list.push({lat,lon,e,name:(x.poi&&x.poi.name)||"Sitio para parar",town:(x.address&&x.address.municipality)||"",d:cum[bi]-pos0,eta:timeAtDist(cum[bi])-timeAtDist(pos0),det:x.detourTime||0});
+  }
+  list.sort((a,b)=>a.d-b.d);
+  renderStops(list);
+}
+function renderStops(list){
+  clearStopMk();
+  const el=$("stopres");el.innerHTML="";
+  if(!list.length){el.textContent="No he encontrado parkings ni áreas de descanso cerca de la ruta.";return}
+  const tp=Math.max(0,270*MIN-S.drvCont);
+  for(const s of list){
+    const pl={lat:s.lat,lon:s.lon,name:s.name+(s.town?", "+s.town:"")};
+    const nearPause=Math.abs(s.eta-tp)<=30*MIN;
+    const row=document.createElement("div");row.className="favrow";
+    const sp=document.createElement("span");
+    sp.innerHTML=`${s.e} <b>${esc(s.name)}</b>${nearPause?' <span class="pz">🟣 hora de tu pausa</span>':""}<br><small>${esc(s.town)} · en ${fmtD(s.d)} · ${hhmm(new Date(Date.now()+s.eta*1000))}${s.det>60?` · desvío ${Math.round(s.det/60)} min`:""}</small>`;
+    sp.onclick=()=>{follow=false;$("brec").style.display=navOn?"block":"none";closeSheets();map.flyTo({center:[s.lon,s.lat],zoom:14})};
+    const a=document.createElement("button");a.textContent="+ Parada";a.onclick=()=>addStopAhead(pl);
+    const f=document.createElement("button");f.textContent="⭐";f.onclick=()=>saveFavAt(pl.lat,pl.lon,pl.name);
+    row.append(sp,a,f);el.appendChild(row);
+    const me2=document.createElement("div");me2.className="poimk";me2.textContent=s.e;
+    const box=document.createElement("div");const t=document.createElement("b");t.textContent=s.name;
+    const sub=document.createElement("div");sub.textContent=`${s.town} · en ${fmtD(s.d)}`;sub.style.cssText="font-size:12px;color:#555;margin-top:2px";
+    const b1=document.createElement("button");b1.textContent="+ Parada";b1.onclick=()=>addStopAhead(pl);
+    const b2=document.createElement("button");b2.textContent="⭐ Guardar";b2.className="sec";b2.style.color="#fff";b2.onclick=()=>saveFavAt(pl.lat,pl.lon,pl.name);
+    box.append(t,sub,b1,b2);
+    stopMk.push(new maplibregl.Marker({element:me2}).setLngLat([s.lon,s.lat]).setPopup(new maplibregl.Popup({offset:16}).setDOMContent(box)).addTo(map));
+  }
+}
+// Añade la parada en su sitio según el orden de la ruta y recalcula
+function addStopAhead(pl){
+  const p=[pl.lon,pl.lat];let bi=navOn?navIdx:0,bd=Infinity;
+  for(let i=bi;i<shape.length;i++){const d=hav(shape[i],p);if(d<bd){bd=d;bi=i}}
+  let k=0;while(k<stops.length&&legEnds[k]!=null&&legEnds[k]<bi)k++;
+  stops.splice(k,0,{lat:pl.lat,lon:pl.lon,name:pl.name});
+  refreshMarkers();closeSheets();clearStopMk();toast("Parada añadida: "+shortName(pl));
+  if(navOn){speak("Parada añadida");calc(me,{quiet:true,heading})}else calc();
+}
+$("bstops").onclick=findStops;
+$("nstop").onclick=findStops;
+$("stopclear").onclick=()=>{clearStopMk();closeSheets()};
 
 /* ---------- Gasolineras, parkings, áreas ---------- */
 let poiMk=[];
