@@ -20,7 +20,8 @@
 html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--txt)}
 #map{position:fixed;inset:0}
 button,input,select{font:inherit;font-size:16px;color:var(--txt)}
-input,select{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 12px;min-width:0;width:100%}
+textarea{font:inherit;font-size:16px;color:var(--txt);resize:vertical}
+input,select,textarea{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 12px;min-width:0;width:100%}
 button{border:0;border-radius:12px;padding:11px 14px;font-weight:600;background:var(--blue);color:#fff;cursor:pointer}
 button.sec{background:var(--panel2)}
 button.go{background:var(--green)}
@@ -84,6 +85,10 @@ a.lnk{color:#93c5fd;text-decoration:underline;cursor:pointer}
 .favrow{display:flex;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
 .favrow span{flex:1;cursor:pointer}
 .favrow button{padding:4px 10px;background:var(--panel2)}
+.imphead{background:var(--panel2);border-radius:12px;padding:10px;font-size:15px;line-height:1.5}
+.imphead small{color:var(--mut)}
+.impbtns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.impbtns button{flex:1;min-width:46%}
 .poibtn{display:block;width:100%;text-align:left;margin-top:8px;background:var(--panel2);padding:14px}
 
 /* ---- Navegación ---- */
@@ -213,6 +218,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
     <button class="sec" id="bfav">⭐ Guardar destino</button>
   </div>
   <div class="row"><button class="sec" id="bstops">🅿️ Dónde parar en la ruta</button></div>
+  <div class="row"><button class="sec" id="bshare">📤 Compartir ruta</button><button class="sec" id="bgmaps">🗺️ Google Maps</button></div>
   <details><summary id="stepsum">Indicaciones</summary><div id="steps"></div></details>
 </div>
 
@@ -291,8 +297,21 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
   <h3>Favoritos <button class="x">Cerrar</button></h3>
   <div class="note" style="margin:0 0 6px">Al tocar uno se usa según la pestaña elegida arriba (Destino, Parada u Origen).</div>
   <button class="poibtn" id="favhere">📍 Guardar mi ubicación actual</button>
+  <button class="poibtn" id="favshare">📤 Enviar mi ubicación actual</button>
+  <button class="poibtn" id="favpaste">📋 Pegar ubicación o ruta recibida</button>
+  <h4>Favoritos</h4>
   <div id="favlist"></div>
+  <h4 id="recenth">Últimos viajes</h4>
+  <div id="recentlist"></div>
   <div class="note">También puedes mantener pulsado cualquier punto del mapa para guardarlo, ir o añadirlo como parada.</div>
+</div>
+
+<div class="sheet" id="imp">
+  <h3>Ubicación o ruta recibida <button class="x">Cerrar</button></h3>
+  <textarea id="imptxt" rows="3" placeholder="Pega aquí lo que te han enviado: enlace de Ruta Camión o de Google Maps, coordenadas, o el nombre y la dirección"></textarea>
+  <div class="row"><button class="sec" id="imppaste">📋 Pegar</button><button id="impgo">Buscar</button></div>
+  <div id="impres" style="margin-top:10px"></div>
+  <div class="note" id="impnote"></div>
 </div>
 
 <div class="sheet" id="stopsheet">
@@ -316,7 +335,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 
 <script>
 "use strict";
-const VER="3.3";
+const VER="3.4";
 const BETA=location.pathname.indexOf("/beta/")>=0;
 const TT="https://api.tomtom.com";
 const $=id=>document.getElementById(id);
@@ -763,7 +782,8 @@ function renderFavs(){
     const sp=document.createElement("span");sp.textContent="⭐ "+f.name+(me?` · ${fmtD(hav([me.lon,me.lat],[f.lon,f.lat]))}`:"");sp.onclick=()=>applyPlace(f,target);
     const r=document.createElement("button");r.textContent="✏️";r.onclick=()=>{const n=prompt("Nuevo nombre",f.name);if(n){f.name=n.slice(0,40);save();renderFavs()}};
     const b=document.createElement("button");b.textContent="✕";b.onclick=()=>{if(confirm("¿Quitar de favoritos?")){S.favs.splice(i,1);save();renderFavs()}};
-    row.append(sp,r,b);el.appendChild(row);
+    const sh=document.createElement("button");sh.textContent="📤";sh.onclick=()=>sharePlace(f);
+    row.append(sp,sh,r,b);el.appendChild(row);
   });
 }
 async function reverseName(lat,lon){
@@ -779,7 +799,7 @@ async function saveFavAt(lat,lon,suggest){
   S.favs.push({name:n.slice(0,40),lat,lon,t:Date.now()});save();toast("⭐ Guardado en favoritos");
   if($("favs").classList.contains("open"))renderFavs();
 }
-$("ffav").onclick=()=>{renderFavs();openSheet("favs")};
+$("ffav").onclick=()=>{renderFavs();renderRecent();openSheet("favs")};
 $("bfav").onclick=()=>{if(dest)saveFavAt(dest.lat,dest.lon,shortName(dest))};
 $("favhere").onclick=async()=>{await getPos();if(me)saveFavAt(me.lat,me.lon)};
 $("nfav").onclick=()=>{if(!me){toast("Todavía no hay señal GPS");return}saveFavAt(me.lat,me.lon)};
@@ -868,6 +888,144 @@ $("bstops").onclick=findStops;
 $("nstop").onclick=findStops;
 $("stopclear").onclick=()=>{clearStopMk();closeSheets()};
 
+/* ---------- Compartir y recibir ubicaciones y rutas ---------- */
+const IOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const STANDALONE=!!(navigator.standalone||(window.matchMedia&&matchMedia("(display-mode: standalone)").matches));
+const c6=n=>(+n).toFixed(6);
+function appUrl(params){return location.origin+location.pathname.replace(/index\.html$/,"")+"?"+new URLSearchParams(params)}
+function gmapsSearch(p){return`https://www.google.com/maps/search/?api=1&query=${c6(p.lat)},${c6(p.lon)}`}
+function gmapsDir(d,via){const q=new URLSearchParams({api:"1",destination:`${c6(d.lat)},${c6(d.lon)}`,travelmode:"driving"});if(via&&via.length)q.set("waypoints",via.map(s=>`${c6(s.lat)},${c6(s.lon)}`).join("|"));return"https://www.google.com/maps/dir/?"+q}
+// Abre la app de Google Maps (en iPhone por su esquema; si no está instalada, la web)
+function openGmaps(d,via){
+  const web=gmapsDir(d,via||[]);
+  if(IOS){
+    const daddr=[...(via||[]),d].map(s=>`${c6(s.lat)},${c6(s.lon)}`).join("+to:");
+    location.href=`comgooglemaps://?daddr=${daddr}&directionsmode=driving`;
+    setTimeout(()=>{if(document.visibilityState==="visible")window.open(web,"_blank")},1500);
+  }else window.open(web,"_blank");
+  toast("Ojo: Google Maps no tiene en cuenta las medidas del camión",5000);
+}
+async function shareText(text,title){
+  if(navigator.share){try{await navigator.share({title,text});return}catch(e){if(e&&e.name==="AbortError")return}}
+  try{await navigator.clipboard.writeText(text);toast("Copiado: pégalo en WhatsApp")}catch(e){prompt("Copia este texto",text)}
+}
+function sharePlace(p){
+  shareText(`📍 ${p.name}\nGoogle Maps: ${gmapsSearch(p)}\nRuta Camión: ${appUrl({p:`${c6(p.lat)},${c6(p.lon)}`,n:p.name})}`,p.name);
+}
+function shareRoute(d,via){
+  const pts=[...via,d].map(x=>[+c6(x.lat),+c6(x.lon),String(x.name||"").slice(0,60)]);
+  const names=[...via,d].map(x=>shortName(x)||"punto").join(" → ");
+  shareText(`🚛 Ruta: ${names}\nGoogle Maps: ${gmapsDir(d,via)}\nRuta Camión: ${appUrl({r:JSON.stringify(pts)})}`,"Ruta "+shortName(d));
+}
+$("bshare").onclick=()=>{if(dest)shareRoute(dest,stops)};
+$("bgmaps").onclick=()=>{if(dest)openGmaps(dest,stops)};
+$("favshare").onclick=async()=>{await getPos();if(me){const n=await reverseName(me.lat,me.lon);sharePlace({lat:me.lat,lon:me.lon,name:"Mi ubicación"+(n?" ("+n+")":"")})}};
+
+// Entiende: enlaces de Ruta Camión, de Google/Apple Maps, coordenadas (decimales o grados) y, si no, una dirección
+function parseShared(t){
+  t=String(t||"").trim();if(!t)return null;
+  let dec=t;try{dec=decodeURIComponent(t.replace(/\+/g," "))}catch(e){}
+  const ok=(a,b)=>{a=+a;b=+b;return Math.abs(a)<=90&&Math.abs(b)<=180&&!(a===0&&b===0)?{lat:a,lon:b}:null};
+  let m=dec.match(/[?&]r=(\[\[.*?\]\])/);
+  if(m){try{const a=JSON.parse(m[1]).filter(x=>ok(x[0],x[1])).map(x=>({lat:+x[0],lon:+x[1],name:x[2]||`Punto (${(+x[0]).toFixed(4)}, ${(+x[1]).toFixed(4)})`}));if(a.length)return{route:a}}catch(e){}}
+  m=dec.match(/[?&]p=(-?\d+\.\d+),(-?\d+\.\d+)(?:&n=([^&\n]*))?/);
+  if(m&&ok(m[1],m[2]))return{place:{...ok(m[1],m[2]),name:(m[3]||"").trim()||"Ubicación recibida"}};
+  const first=t.split("\n").map(s=>s.trim()).find(s=>s&&!/^https?:/i.test(s)&&!/^(Google Maps|Ruta Camión):/i.test(s));
+  const nm=first?first.replace(/^📍\s*/,"").slice(0,60):"";
+  const gp=dec.match(/\/maps\/place\/([^/@?]+)/);
+  const nmG=gp?gp[1].replace(/\+/g," ").trim().slice(0,60):"";
+  const pats=[/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,/[?&](?:q|query|destination|daddr|ll|sll|center|coordinate)=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/,/@(-?\d+\.\d+),(-?\d+\.\d+)/,/(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/];
+  for(const re of pats){m=dec.match(re);if(m&&ok(m[1],m[2]))return{place:{...ok(m[1],m[2]),name:nmG||(nm&&!/^-?\d/.test(nm)&&!/^https?:/i.test(nm)?nm:"Ubicación recibida")}}}
+  m=dec.match(/(\d{1,2})°\s*(\d{1,2})['′]\s*([\d.]+)["″]?\s*([NS])[\s,]+(\d{1,3})°\s*(\d{1,2})['′]\s*([\d.]+)["″]?\s*([EWO])/i);
+  if(m){const la=(+m[1]+m[2]/60+m[3]/3600)*(/S/i.test(m[4])?-1:1),lo=(+m[5]+m[6]/60+m[7]/3600)*(/[WO]/i.test(m[8])?-1:1);if(ok(la,lo))return{place:{lat:la,lon:lo,name:nm&&!/^\d/.test(nm)?nm:"Ubicación recibida"}}}
+  const lines=t.split("\n").map(s=>s.trim()).filter(s=>s&&!/https?:\/\//i.test(s));
+  if(lines.length)return{text:lines.join(", "),name:lines[0].slice(0,60),shortOnly:false};
+  if(/maps\.app\.goo\.gl|goo\.gl\/maps/i.test(t))return{shortOnly:true};
+  return null;
+}
+function placeButtons(p,box){
+  const mk=(txt,fn,cls)=>{const b=document.createElement("button");b.textContent=txt;if(cls)b.className=cls;b.onclick=fn;box.appendChild(b)};
+  mk("Ir aquí",()=>{closeSheets();applyPlace(p,"dest")});
+  mk("+ Parada",()=>{closeSheets();if(shape.length&&navOn)addStopAhead(p);else applyPlace(p,"stop")},"sec");
+  mk("⭐ Guardar",()=>saveFavAt(p.lat,p.lon,p.name),"sec");
+  mk("Google Maps",()=>openGmaps(p,[]),"sec");
+}
+function showPlace(p){
+  const el=$("impres");el.innerHTML="";
+  const t=document.createElement("div");t.className="imphead";t.innerHTML=`📍 <b>${esc(p.name)}</b><br><small>${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}${me?" · a "+fmtD(hav([me.lon,me.lat],[p.lon,p.lat])):""}</small>`;
+  el.appendChild(t);const box=document.createElement("div");box.className="impbtns";placeButtons(p,box);el.appendChild(box);
+  map.flyTo({center:[p.lon,p.lat],zoom:13});
+}
+function showRoute(a){
+  const el=$("impres");el.innerHTML="";
+  const t=document.createElement("div");t.className="imphead";
+  t.innerHTML="🚛 <b>Ruta recibida</b><br>"+a.map((x,i)=>`<small>${i===a.length-1?"🏁":"• Parada "+(i+1)+":"} ${esc(shortName(x))}</small>`).join("<br>");
+  el.appendChild(t);const box=document.createElement("div");box.className="impbtns";
+  const b=document.createElement("button");b.textContent="Cargar ruta (con mi camión)";b.onclick=()=>{closeSheets();origin=null;stops=a.slice(0,-1);dest=a[a.length-1];refreshMarkers();calc()};box.appendChild(b);
+  const g=document.createElement("button");g.className="sec";g.textContent="Google Maps";g.onclick=()=>openGmaps(a[a.length-1],a.slice(0,-1));box.appendChild(g);
+  el.appendChild(box);
+}
+async function importText(txt){
+  const r=parseShared(txt),el=$("impres");
+  if(!r){el.textContent="No encuentro ninguna ubicación en ese texto.";return}
+  if(r.route)return showRoute(r.route);
+  if(r.place)return showPlace(r.place);
+  if(r.shortOnly){el.innerHTML="Ese enlace corto de Google no se puede leer desde aquí. En Google Maps usa <b>Compartir</b> (que incluye nombre y dirección) o mantén pulsado el sitio y copia las coordenadas.";return}
+  geocodeText(r.text,r.name,true);
+}
+async function geocodeText(text,name,retry){
+  const el=$("impres");
+  if(!S.key){el.textContent="Para buscar una dirección hace falta tu clave de TomTom.";return}
+  el.textContent="Buscando la dirección…";
+  try{
+    uso("busq");const b=biasPoint();
+    const resp=await fetch(`${TT}/search/2/search/${encodeURIComponent(text.slice(0,250))}.json?key=${S.key}&limit=5&language=es-ES&countrySet=ES,PT,FR,AD&lat=${b.lat.toFixed(5)}&lon=${b.lon.toFixed(5)}`);
+    const js=await resp.json();
+    if(!resp.ok||!js.results||!js.results.length){
+      // Sin suerte con todo el texto: probar solo con la dirección (sin el nombre de la empresa)
+      const rest=text.split(", ").slice(1).join(", ");
+      if(retry&&rest)return geocodeText(rest,name,false);
+      el.textContent="No encuentro esa dirección. Prueba a pegar las coordenadas.";return;
+    }
+    el.innerHTML="<div class='sub' style='margin-bottom:6px'>¿Cuál es?</div>";
+    js.results.forEach(p=>{
+      const addr=(p.poi&&p.poi.name?p.poi.name+", ":"")+(p.address&&p.address.freeformAddress||"");
+      const d=document.createElement("div");d.className="favrow";const sp=document.createElement("span");sp.textContent=addr;
+      sp.onclick=()=>showPlace({lat:p.position.lat,lon:p.position.lon,name:name&&!/^\d/.test(name)?name:addr});
+      d.appendChild(sp);el.appendChild(d);
+    });
+  }catch(e){el.textContent="No se pudo buscar (¿sin conexión?)"}
+}
+function openImport(txt){
+  $("imptxt").value=txt||"";$("impres").innerHTML="";
+  $("impnote").innerHTML=IOS&&!STANDALONE&&txt?`Has abierto el enlace en Safari. Si usas Ruta Camión desde la pantalla de inicio: <a class="lnk" id="impcopy">copia el enlace</a>, abre la app → ⭐ → «📋 Pegar ubicación o ruta recibida».`:"";
+  const c=$("impcopy");if(c)c.onclick=async()=>{try{await navigator.clipboard.writeText(txt);toast("Enlace copiado")}catch(e){prompt("Copia el enlace",txt)}};
+  openSheet("imp");if(txt)importText(txt);
+}
+$("favpaste").onclick=()=>openImport("");
+$("imppaste").onclick=async()=>{try{const t=await navigator.clipboard.readText();if(t){$("imptxt").value=t;importText(t)}}catch(e){toast("Mantén pulsado el cuadro y elige Pegar")}};
+$("impgo").onclick=()=>importText($("imptxt").value);
+
+/* ---------- Últimos viajes ---------- */
+function rememberTrip(){
+  if(!dest)return;
+  const trip={dest:{lat:dest.lat,lon:dest.lon,name:dest.name},stops:stops.map(s=>({lat:s.lat,lon:s.lon,name:s.name})),t:Date.now()};
+  S.recent=(S.recent||[]).filter(r=>hav([r.dest.lon,r.dest.lat],[dest.lon,dest.lat])>200||r.stops.length!==trip.stops.length);
+  S.recent.unshift(trip);S.recent=S.recent.slice(0,15);save();
+}
+function renderRecent(){
+  const el=$("recentlist");el.innerHTML="";const R=S.recent||[];
+  $("recenth").style.display=R.length?"block":"none";
+  R.forEach(r=>{
+    const row=document.createElement("div");row.className="favrow";
+    const sp=document.createElement("span");
+    sp.innerHTML=`🕘 ${esc(shortName(r.dest))}${r.stops.length?` <small>(${r.stops.length} parada${r.stops.length>1?"s":""})</small>`:""}<br><small>${new Date(r.t).toLocaleString("es-ES",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</small>`;
+    sp.onclick=()=>{closeSheets();origin=null;stops=r.stops.map(s=>({...s}));dest={...r.dest};refreshMarkers();calc()};
+    const sh=document.createElement("button");sh.textContent="📤";sh.onclick=()=>shareRoute(r.dest,r.stops);
+    row.append(sp,sh);el.appendChild(row);
+  });
+}
+
 /* ---------- Gasolineras, parkings, áreas ---------- */
 let poiMk=[];
 function clearPoi(){poiMk.forEach(m=>m.remove());poiMk=[]}
@@ -933,6 +1091,7 @@ function once(set,k,txt){if(!set.has(k)){set.add(k);speak(txt)}}
 function showNavUI(){navOn=true;document.body.classList.add("navmode");closeSheets();$("sug").style.display="none";drawAlts()}
 function startNav(){
   if(!shape.length)return;
+  rememberTrip();
   speak("Navegación iniciada");          // en el iPhone la voz tiene que arrancar dentro del toque
   nosleep.play().catch(()=>{});
   showNavUI();follow=true;$("brec").style.display="none";
@@ -1075,7 +1234,9 @@ setInterval(()=>{
 
 /* ---------- Inicio ---------- */
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
-if(!S.key){fillCfg();openSheet("cfg");toast("Pega tu clave de TomTom para empezar",5000)}
+const incoming=/[?&](p|r)=/.test(location.search)?location.href:"";
+if(incoming){try{history.replaceState(null,"",location.pathname)}catch(e){}setTimeout(()=>openImport(incoming),300)}
+else if(!S.key){fillCfg();openSheet("cfg");toast("Pega tu clave de TomTom para empezar",5000)}
 </script>
 </body>
 </html>
