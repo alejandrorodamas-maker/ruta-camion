@@ -109,7 +109,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 #navbtns{display:flex;gap:8px;margin-top:8px}
 #navbtns button{flex:1;padding:10px 6px}
 #bmute{flex:none!important;width:52px;font-size:20px}
-#bmute.off{background:#7c2d12}
+#bmute.off,#fmute.off{background:#7c2d12}
 #brec{pointer-events:auto;position:absolute;right:12px;bottom:calc(150px + var(--sab));display:none;border-radius:999px;box-shadow:0 3px 12px #0008}
 
 .stopmk{width:26px;height:26px;border-radius:50%;background:#f59e0b;color:#111;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;box-shadow:0 2px 6px #0008}
@@ -123,6 +123,33 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 #toast{position:fixed;z-index:30;left:50%;top:calc(76px + var(--sat));transform:translate(-50%,-10px);background:#000d;color:#fff;padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;max-width:90vw;text-align:center}
 #toast.on{opacity:1;transform:translate(-50%,0)}
 #loading{position:fixed;z-index:4;left:50%;top:50%;transform:translate(-50%,-50%);background:#000b;color:#fff;padding:10px 18px;border-radius:999px;font-size:14px}
+#navarrow svg{width:100%;height:100%}
+/* ---- Horizontal (móvil tumbado): paneles a la izquierda, mapa a la derecha ---- */
+@media (orientation:landscape) and (max-height:540px){
+  :root{--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px)}
+  #top{left:calc(8px + var(--sal));right:auto;width:min(420px,50vw);margin:0}
+  #fabs{top:calc(8px + var(--sat));right:calc(8px + var(--sar));gap:5px}
+  .fab{width:40px;height:40px;font-size:17px}
+  #card{left:calc(8px + var(--sal));right:auto;width:min(440px,52vw);margin:0;max-height:calc(100vh - 118px)}
+  .sheet{left:calc(8px + var(--sal));right:auto;width:min(480px,60vw);margin:0;max-height:calc(100vh - 16px)}
+  #navtop{left:calc(8px + var(--sal));right:auto;width:min(370px,46vw);margin:0;padding:9px 12px;top:calc(6px + var(--sat))}
+  #navarrow{width:54px;height:54px}
+  #navdist{font-size:26px}
+  #navtxt{font-size:15px}
+  #lanes{margin-top:6px;padding:4px}
+  .lane{width:30px;height:32px}
+  .lane svg{width:24px;height:24px}
+  #then{margin-top:5px}
+  #navbot{left:calc(8px + var(--sal));right:auto;width:min(370px,46vw);margin:0;padding:8px 10px;bottom:calc(6px + var(--sab))}
+  #spdbox{width:48px;height:48px}
+  .lim{min-width:42px;height:42px;font-size:17px;border-width:4px}
+  .stat b{font-size:17px}
+  #navbtns{margin-top:6px}
+  #navbtns button{padding:7px 6px}
+  #brec{right:calc(12px + var(--sar));bottom:calc(12px + var(--sab))}
+  #toast{left:auto;right:calc(12px + var(--sar));transform:none;top:calc(12px + var(--sat))}
+  #toast.on{transform:none}
+}
 #ver{position:fixed;z-index:4;right:10px;bottom:calc(10px + var(--sab));font-size:11px;background:#7c3aed;color:#fff;padding:3px 8px;border-radius:999px;pointer-events:none;display:none}
 </style>
 </head>
@@ -151,6 +178,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
   <button class="fab" id="ftraf" title="Tráfico">🚦</button>
   <button class="fab" id="fpoi" title="Gasolineras, parkings…">⛽</button>
   <button class="fab" id="floc" title="Mi ubicación">📍</button>
+  <button class="fab" id="fmute" title="Silenciar voz">🔊</button>
 </div>
 
 <div id="card">
@@ -204,8 +232,9 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 
 <div class="sheet" id="cfg">
   <h3>Camión y ajustes <button class="x">Cerrar</button></h3>
-  <label>Clave de TomTom (se guarda solo en este teléfono)</label>
+  <label>Clave de TomTom de este teléfono</label>
   <input type="password" id="key" autocomplete="off">
+  <div class="note" id="keyinfo" style="margin-top:6px"></div>
   <label>Perfil de camión</label>
   <div style="display:flex;gap:6px">
     <select id="psel"></select>
@@ -260,7 +289,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 
 <script>
 "use strict";
-const VER="3.0";
+const VER="3.1";
 const BETA=location.pathname.indexOf("/beta/")>=0;
 const TT="https://api.tomtom.com";
 const $=id=>document.getElementById(id);
@@ -397,7 +426,8 @@ document.querySelectorAll(".sheet .x").forEach(b=>b.onclick=closeSheets);
 const val=id=>parseFloat($(id).value);
 function renderProfSel(){$("psel").innerHTML=S.profiles.map((p,i)=>`<option value="${i}" ${i===S.active?"selected":""}>${esc(p.name)}</option>`).join("")}
 function loadProf(){const p=prof();$("pname").value=p.name;for(const k of["height","width","length","weight","axle"])$(k).value=p[k];$("adr").value=p.adr||""}
-function fillCfg(){$("key").value=S.key;renderProfSel();loadProf();$("maxspd").value=S.maxspd;$("dcont").value=Math.round(S.drvCont/MIN);$("dday").value=Math.round(S.drvDay/MIN);
+function keyInfo(){const k=S.key||"";$("keyinfo").innerHTML=k?`Clave guardada: <b>••••${esc(k.slice(-4))}</b>. Cada teléfono usa la suya; no se sube a GitHub ni a ningún sitio, solo viaja a TomTom.`:"Sin clave: pega la tuya de developer.tomtom.com"}
+function fillCfg(){$("key").value=S.key;keyInfo();renderProfSel();loadProf();$("maxspd").value=S.maxspd;$("dcont").value=Math.round(S.drvCont/MIN);$("dday").value=Math.round(S.drvDay/MIN);
   $("tolls").checked=!!S.tolls;$("mute").checked=!!S.mute;$("eco").checked=!!S.eco;renderUso()}
 $("fcfg").onclick=()=>{fillCfg();openSheet("cfg")};
 $("psel").onchange=()=>{S.active=+$("psel").value;save();loadProf()};
@@ -666,8 +696,8 @@ function speak(t,force){
   if(S.mute&&!force)return;
   try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang="es-ES";if(voice)u.voice=voice;speechSynthesis.speak(u)}catch(e){}
 }
-function setMuteBtn(){const b=$("bmute");b.textContent=S.mute?"🔇":"🔊";b.classList.toggle("off",!!S.mute)}
-$("bmute").onclick=()=>{S.mute=!S.mute;save();setMuteBtn();if(S.mute){try{speechSynthesis.cancel()}catch(e){}toast("Voz silenciada")}else speak("Voz activada",true)};
+function setMuteBtn(){for(const id of["bmute","fmute"]){const b=$(id);b.textContent=S.mute?"🔇":"🔊";b.classList.toggle("off",!!S.mute)}$("mute").checked=!!S.mute}
+$("fmute").onclick=$("bmute").onclick=()=>{S.mute=!S.mute;save();setMuteBtn();if(S.mute){try{speechSynthesis.cancel()}catch(e){}toast("Voz silenciada")}else speak("Voz activada",true)};
 setMuteBtn();
 
 /* ---------- Pantalla siempre encendida (Wake Lock + vídeo mudo para iPhone) ---------- */
@@ -757,7 +787,7 @@ function onPos(p){
   const nd=ni?Math.max(0,cum[Math.min(ni.pointIndex||0,cum.length-1)]-pos):Infinity;
   if(follow){
     const z=nd<300?17:(kmh||0)>70?15:16;
-    map.easeTo({center:pt,zoom:z,pitch:S.eco?0:55,bearing:heading!=null?heading:map.getBearing(),duration:S.eco?0:900,offset:[0,Math.round(innerHeight*.2)]});
+    map.easeTo({center:pt,zoom:z,pitch:S.eco?0:55,bearing:heading!=null?heading:map.getBearing(),duration:S.eco?0:900,offset:innerWidth>innerHeight&&innerHeight<540?[Math.round(innerWidth*.2),Math.round(innerHeight*.15)]:[0,Math.round(innerHeight*.2)]});
   }
 
   // Siguiente maniobra
