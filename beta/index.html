@@ -260,13 +260,15 @@ function ensureLayers(){
   if(trafOn)addTraf();
 }
 map.on("style.load",ensureLayers);
+// Al cambiar de estilo el mapa puede no emitir style.load: volvemos a poner la ruta y el tráfico si faltan
+map.on("styledata",()=>{if(map.isStyleLoaded())ensureLayers()});
 function setRouteSource(){const s=map.getSource("route");if(s)s.setData(routeGeo())}
 
 $("fstyle").onclick=()=>{
   const order=["auto","day","bright","night"];
   S.style=order[(order.indexOf(S.style)+1)%order.length];save();
   const n=styleName();
-  if(n!==curStyle){curStyle=n;fell=false;map.setStyle(STYLES[n])}
+  if(n!==curStyle){curStyle=n;fell=false;map.setStyle(STYLES[n],{diff:false})}
   toast("Mapa: "+STYLE_NAMES[S.style]);
 };
 $("ftraf").onclick=()=>{
@@ -333,9 +335,8 @@ async function geocode(){
   if(!q)return;
   if(!S.key){fillCfg();openSheet("cfg");toast("Pega primero tu clave de TomTom");return}
   const sug=$("sug");sug.style.display="block";sug.textContent="Buscando…";sug.style.padding="12px";
-  const c=map.getCenter();
   try{
-    const r=await fetch(`${TT}/search/2/search/${encodeURIComponent(q)}.json?key=${S.key}&limit=7&language=es-ES&lat=${c.lat}&lon=${c.lng}`);
+    const r=await fetch(`${TT}/search/2/search/${encodeURIComponent(q)}.json?key=${S.key}&limit=7&language=es-ES`);
     const js=await r.json();
     sug.innerHTML="";sug.style.padding="0";
     if(!r.ok){sug.style.padding="12px";sug.textContent="Error de búsqueda: revisa la clave";return}
