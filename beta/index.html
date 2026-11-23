@@ -248,7 +248,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
     </div>
     <div id="navbtns">
       <button class="sec" id="bmute" title="Silenciar voz">🔊</button>
-      <button class="sec" id="bpausa">Pausa hecha</button>
+      <button class="sec" id="bpausa">Pausa</button>
       <button class="stop" id="bstop">Terminar</button>
     </div>
   </div>
@@ -283,6 +283,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
     <div><label>Desde la última pausa (min)</label><input type="number" id="dcont" inputmode="numeric" min="0" max="600"></div>
     <div><label>Conducido hoy (min)</label><input type="number" id="dday" inputmode="numeric" min="0" max="900"></div>
   </div>
+  <div class="inl"><input type="checkbox" id="d15"><label for="d15">Ya hice los primeros 15 min de una pausa partida (me faltan 30)</label></div>
   <h4>Opciones</h4>
   <div class="inl"><input type="checkbox" id="tolls"><label for="tolls">Evitar autopistas de peaje</label></div>
   <div class="inl"><input type="checkbox" id="mute"><label for="mute">Voz silenciada</label></div>
@@ -314,6 +315,14 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
   <div class="note" id="impnote"></div>
 </div>
 
+<div class="sheet" id="pzs">
+  <h3>Pausa <button class="x">Cerrar</button></h3>
+  <div class="note" id="pzinfo" style="margin:0 0 4px"></div>
+  <button class="poibtn" id="pzfull">✅ Pausa completa hecha</button>
+  <button class="poibtn" id="pz15">⏸ Primera parte hecha (15 min)</button>
+  <div class="note">No hace falta tocar nada si el móvil ve el camión parado: la app lo cuenta sola. Pausa = 45 min seguidos, o 15 min y más tarde otros 30 (en ese orden). Una parada de menos de 15 min (una urgencia, un café rápido) no cuenta como pausa: el contador sigue donde estaba.</div>
+</div>
+
 <div class="sheet" id="stopsheet">
   <h3>Dónde parar en tu ruta <button class="x">Cerrar</button></h3>
   <div id="stopres"></div>
@@ -335,7 +344,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 
 <script>
 "use strict";
-const VER="3.4";
+const VER="3.5";
 const BETA=location.pathname.indexOf("/beta/")>=0;
 const TT="https://api.tomtom.com";
 const $=id=>document.getElementById(id);
@@ -350,11 +359,17 @@ if(!S){
   S=JSON.parse(JSON.stringify(o));
   S.drvCont=(S.driven||0)*MIN;delete S.driven;
 }
-S=Object.assign({drvCont:0,drvDay:0,drvAt:0,mute:false,eco:false,traf:false,maxspd:90,style:"auto",favs:[],tolls:false},S);
+S=Object.assign({drvCont:0,drvDay:0,drvAt:0,split15:false,split15At:0,mute:false,eco:false,traf:false,maxspd:90,style:"auto",favs:[],tolls:false},S);
 const save=()=>LS.set("v3",S);
 const prof=()=>S.profiles[S.active]||S.profiles[0];
-// Si ha pasado tiempo parado desde la última vez: 45 min = pausa hecha; 9 h = descanso diario
-(function restCheck(){if(!S.drvAt)return;const gap=Date.now()-S.drvAt;if(gap>=45*MIN*1000)S.drvCont=0;if(gap>=9*H*1000)S.drvDay=0})();
+// Pausa (normas UE): 45 min seguidos, o partida 15 + 30 en ese orden. Paradas de menos de 15 min no cuentan.
+// split15 = ya hecha la primera parte; split15At = la parada en la que se hizo (la de 30 tiene que ser otra parada)
+const second30=g=>S.split15&&S.split15At!==S.drvAt&&g>=30*MIN;
+// Si ha pasado tiempo parado desde la última vez (app cerrada): pausa hecha / primera parte / descanso diario
+(function restCheck(){if(!S.drvAt)return;const g=(Date.now()-S.drvAt)/1000;
+  if(g>=45*MIN||second30(g)){S.drvCont=0;S.split15=false}
+  else if(S.drvCont>0&&!S.split15&&g>=15*MIN){S.split15=true;S.split15At=S.drvAt}
+  if(g>=9*H){S.drvDay=0;S.split15=false}})();
 save();
 
 function toast(t,ms=3400){const e=$("toast");e.textContent=t;e.classList.add("on");clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove("on"),ms)}
@@ -478,7 +493,7 @@ const val=id=>parseFloat($(id).value);
 function renderProfSel(){$("psel").innerHTML=S.profiles.map((p,i)=>`<option value="${i}" ${i===S.active?"selected":""}>${esc(p.name)}</option>`).join("")}
 function loadProf(){const p=prof();$("pname").value=p.name;for(const k of["height","width","length","weight","axle"])$(k).value=p[k];$("adr").value=p.adr||""}
 function keyInfo(){const k=S.key||"";$("keyinfo").innerHTML=k?`Clave guardada: <b>••••${esc(k.slice(-4))}</b>. Cada teléfono usa la suya; no se sube a GitHub ni a ningún sitio, solo viaja a TomTom.`:"Sin clave: pega la tuya de developer.tomtom.com"}
-function fillCfg(){$("key").value=S.key;keyInfo();renderProfSel();loadProf();$("maxspd").value=S.maxspd;$("dcont").value=Math.round(S.drvCont/MIN);$("dday").value=Math.round(S.drvDay/MIN);
+function fillCfg(){$("key").value=S.key;keyInfo();renderProfSel();loadProf();$("maxspd").value=S.maxspd;$("dcont").value=Math.round(S.drvCont/MIN);$("dday").value=Math.round(S.drvDay/MIN);$("d15").checked=!!S.split15;
   $("tolls").checked=!!S.tolls;$("mute").checked=!!S.mute;$("eco").checked=!!S.eco;renderUso()}
 $("fcfg").onclick=()=>{fillCfg();openSheet("cfg")};
 $("psel").onchange=()=>{S.active=+$("psel").value;save();loadProf()};
@@ -492,6 +507,8 @@ $("save").onclick=()=>{
   const ms=parseInt($("maxspd").value);if(ms>=50&&ms<=120)S.maxspd=ms;
   const dc=Math.max(0,parseInt($("dcont").value)||0)*MIN,dd=Math.max(0,parseInt($("dday").value)||0)*MIN;
   if(dc!==Math.round(S.drvCont/MIN)*MIN||dd!==Math.round(S.drvDay/MIN)*MIN){S.drvCont=dc;S.drvDay=Math.max(dd,dc);S.drvAt=Date.now();drvSpoken.clear()}
+  const s15=$("d15").checked;if(s15!==!!S.split15){S.split15=s15;S.split15At=-1}
+  if(sum){computePauses();if(!navOn)renderCard()}
   S.tolls=$("tolls").checked;S.mute=$("mute").checked;S.eco=$("eco").checked;
   save();renderProfSel();closeSheets();setMuteBtn();toast("Guardado");
   if(S.key!==oldKey){refreshTraf();if(S.traf)addTraf()}
@@ -593,16 +610,18 @@ function timeAtDist(d){
 function idxAtTime(t){let lo=0,hi=shape.length-1;while(lo<hi){const mid=(lo+hi)>>1;if(timeAtDist(cum[mid])<t)lo=mid+1;else hi=mid}return lo}
 
 /* ---------- Pausas previstas ---------- */
+// Segundos de pausa que suman n pausas (la primera es de 30 si ya hiciste los 15)
+const pauseSecs=n=>n?(S.split15?30:45)*MIN+(n-1)*45*MIN:0;
 let pauseMk=[],pauseT=[];
 function computePauses(){
   pauseMk.forEach(m=>m.remove());pauseMk=[];pauseT=[];
   const LIM=270*MIN;let t=Math.max(0,LIM-S.drvCont);
   const total=sum.travelTimeInSeconds;
   while(t<total-300&&pauseT.length<6){
-    pauseT.push(t);
+    const first=!pauseT.length;pauseT.push(t);
     const pt=shape[idxAtTime(t)];
     if(pt){const el=document.createElement("div");el.className="pausemk";el.textContent="P";
-      pauseMk.push(new maplibregl.Marker({element:el}).setLngLat(pt).setPopup(new maplibregl.Popup({offset:18}).setText(`Pausa de 45 min (dentro de ${fmtT(t)} de conducción)`)).addTo(map))}
+      pauseMk.push(new maplibregl.Marker({element:el}).setLngLat(pt).setPopup(new maplibregl.Popup({offset:18}).setText(`${first&&S.split15?"Segunda parte de la pausa, 30 min":"Pausa de 45 min (o 15 + 30)"} (dentro de ${fmtT(t)} de conducción)`)).addTo(map))}
     t+=LIM;
   }
 }
@@ -741,7 +760,7 @@ function trafBadges(T){const c={};for(const t of T)c[t.cat]=(c[t.cat]||0)+1;retu
 function renderCard(){
   const total=sum.travelTimeInSeconds,delay=sum.trafficDelayInSeconds||0;
   $("sumtxt").textContent=`${fmtD(sum.lengthInMeters)} · ${fmtT(total)}`;
-  const arr=new Date(Date.now()+total*1000),arrP=new Date(Date.now()+(total+pauseT.length*45*MIN)*1000);
+  const arr=new Date(Date.now()+total*1000),arrP=new Date(Date.now()+(total+pauseSecs(pauseT.length))*1000);
   $("etatxt").textContent=`Llegada ${hhmm(arr)}`+(pauseT.length?` (${hhmm(arrP)} con pausas)`:"")+(delay>120?` · +${fmtT(delay)} por tráfico`:" · sin retrasos de tráfico");
   // Alternativas
   const ae=$("alts");
@@ -752,7 +771,7 @@ function renderCard(){
     ae.style.display="flex";
   }else{ae.innerHTML="";ae.style.display="none"}
   let w="";
-  if(pauseT.length)w+=`<div class="warn">🟣 Pausa de 45 min ${pauseT.map(t=>t<=0?"ya":"dentro de "+fmtT(t)).join(", ")} (cuenta los ${Math.round(S.drvCont/MIN)} min que llevas).</div>`;
+  if(pauseT.length)w+=`<div class="warn">🟣 ${S.split15?"Te faltan los 30 min de la pausa partida:":"Pausa de 45 min (o 15 + 30)"} ${pauseT.map(t=>t<=0?"ya":"dentro de "+fmtT(t)).join(", ")} (cuenta los ${Math.round(S.drvCont/MIN)} min que llevas).</div>`;
   if(S.drvCont>=270*MIN)w+=`<div class="warn">⚠ Con lo que llevas conducido, ya toca parar.</div>`;
   $("warns").innerHTML=w;
   $("trafs").innerHTML=trafS.slice(0,6).map(t=>`<div class="tr">${TICON[t.cat]||"⚠️"} <b>${TNAME[t.cat]||"Incidencia"}</b> en el km ${Math.round(cum[t.s]/1000)}${t.delay>60?` · +${fmtT(t.delay)}`:""}</div>`).join("")+(trafS.length>6?`<div class="sub">y ${trafS.length-6} más</div>`:"");
@@ -1085,7 +1104,7 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 
 /* ---------- Navegación ---------- */
 let navOn=false,watchId=null,navIdx=0,offCount=0,overCount=0,lastFix=0,lastFixAt=0,lastPt=null,heading=null,lastAlert=0,lastSave=0,follow=true,kmhNow=null;
-const spoken=new Set(),drvSpoken=new Set();
+const spoken=new Set(),drvSpoken=new Set();let stillSeen=false;
 const pkey=(i,s)=>{const p=shape[Math.min(i,shape.length-1)]||[0,0];return p[0].toFixed(4)+","+p[1].toFixed(4)+s};
 function once(set,k,txt){if(!set.has(k)){set.add(k);speak(txt)}}
 function showNavUI(){navOn=true;document.body.classList.add("navmode");closeSheets();$("sug").style.display="none";drawAlts()}
@@ -1111,7 +1130,22 @@ function stopNav(){
 }
 $("bnav").onclick=startNav;
 $("bstop").onclick=stopNav;
-$("bpausa").onclick=()=>{S.drvCont=0;S.drvAt=Date.now();save();for(const k of[...drvSpoken])if(k[0]==="c")drvSpoken.delete(k);$("nvdrv").textContent="0:00";if(sum)computePauses();toast("Contador desde la última pausa a cero")};
+function resetCont(){S.drvCont=0;S.split15=false;for(const k of[...drvSpoken])if(k[0]==="c")drvSpoken.delete(k);save();$("nvdrv").textContent="0:00";drvStat();if(sum){computePauses();if(!navOn)renderCard()}}
+function drvStat(){$("nvday").textContent="hoy "+fmtHM(S.drvDay)+(S.split15?" · 15✓":"")}
+// Mira cuánto llevas parado (segundos) y aplica la regla de la pausa
+function checkStop(g){
+  if(S.drvCont<=0)return;
+  if(g>=45*MIN||second30(g)){const two=g<45*MIN;resetCont();speak(two?"Treinta minutos parado. Pausa partida completa, contador a cero.":"Llevas cuarenta y cinco minutos parado. Pausa cumplida, contador a cero.");toast(two?"✅ Pausa partida 15 + 30 completa":"✅ Pausa de 45 min cumplida",6000);return}
+  if(!S.split15&&g>=15*MIN){S.split15=true;S.split15At=S.drvAt;save();drvStat();if(sum)computePauses();
+    speak("Quince minutos parado. Primera parte de la pausa hecha. Si sigues ahora, más adelante te faltará una pausa de treinta minutos.");toast("⏸ Primera parte de la pausa (15 min) hecha. Faltan 30 más adelante, o sigue parado hasta 45.",8000)}
+}
+$("bpausa").onclick=()=>{
+  $("pzinfo").textContent=`Llevas ${fmtHM(S.drvCont)} conduciendo desde la última pausa.`+(S.split15?" Ya hiciste la primera parte de 15 min: te falta una de 30.":"");
+  $("pzfull").textContent=S.split15?"✅ Segunda parte hecha (30 min)":"✅ Pausa completa hecha (45 min)";
+  $("pz15").style.display=S.split15?"none":"block";
+  openSheet("pzs")};
+$("pzfull").onclick=()=>{S.drvAt=Date.now();resetCont();closeSheets();toast("Contador desde la última pausa a cero")};
+$("pz15").onclick=()=>{S.split15=true;S.split15At=S.drvAt;save();drvStat();if(sum){computePauses();if(!navOn)renderCard()}closeSheets();toast("⏸ Primera parte hecha: te falta una pausa de 30 min")};
 $("brec").onclick=()=>{follow=true;$("brec").style.display="none"};
 map.on("dragstart",e=>{if(navOn&&e.originalEvent){follow=false;$("brec").style.display="block"}});
 
@@ -1127,6 +1161,10 @@ function onPos(p){
   kmhNow=kmh;
   const moving=kmh!=null&&kmh>5;
   // Tacógrafo orientativo
+  if(!moving)stillSeen=true;
+  else if(stillSeen){stillSeen=false;const g=S.drvAt?(now-S.drvAt)/1000:0;
+    // Al arrancar tras una parada que no llega a pausa: avisar (sin voz) de que no cuenta
+    if(S.drvCont>0&&g>=3*MIN&&g<45*MIN&&!(g>=15*MIN&&(!S.split15||S.split15At===S.drvAt))&&!second30(g))toast(`Parada de ${Math.round(g/MIN)} min: no cuenta como pausa${S.split15?" (para la segunda parte hacen falta 30 min)":" (mínimo 15 min)"}`,6000)}
   if(moving&&dt>0&&dt<30){S.drvCont+=dt;S.drvDay+=dt;S.drvAt=now}
   if(now-lastSave>60000){lastSave=now;save()}
   // Rumbo
@@ -1199,15 +1237,15 @@ function onPos(p){
   // Llegada prevista
   remT=Math.max(0,sum.travelTimeInSeconds-timeAtDist(pos));
   const np=S.drvCont+remT>270*MIN?Math.floor((S.drvCont+remT)/(270*MIN)):0;
-  $("nveta").textContent=hhmm(new Date(now+(remT+np*45*MIN)*1000));
+  $("nveta").textContent=hhmm(new Date(now+(remT+pauseSecs(np))*1000));
   $("nvetal").textContent=np?`llegada (+${np} pausa${np>1?"s":""})`:"llegada";
   $("nvrem").textContent=fmtD(rem);
   $("nvdrv").textContent=fmtHM(S.drvCont);
-  $("nvday").textContent="hoy "+fmtHM(S.drvDay);
+  drvStat();
 
   // Avisos de conducción
   if(S.drvCont>=255*MIN)once(drvSpoken,"c255","Llevas cuatro horas y cuarto conduciendo. Busca dónde parar.");
-  if(S.drvCont>=270*MIN)once(drvSpoken,"c270","Cuatro horas y media de conducción. Toca la pausa de cuarenta y cinco minutos.");
+  if(S.drvCont>=270*MIN)once(drvSpoken,"c270",S.split15?"Cuatro horas y media de conducción. Toca la segunda parte de la pausa, treinta minutos.":"Cuatro horas y media de conducción. Toca la pausa de cuarenta y cinco minutos.");
   if(S.drvDay>=8.5*H)once(drvSpoken,"d510","Llevas ocho horas y media de conducción hoy.");
   if(S.drvDay>=9*H)once(drvSpoken,"d540","Has llegado a nueve horas de conducción hoy. Solo puedes llegar a diez dos veces por semana.");
   if(S.drvDay>=10*H)once(drvSpoken,"d600","Has llegado a diez horas de conducción hoy.");
@@ -1221,9 +1259,9 @@ setInterval(()=>{
   const now=Date.now();
   if(navOn){
     if(now-lastFixAt>15000){$("navtop").classList.add("lost");$("navroad").textContent="⚠ Sin señal GPS";}
-    // 45 min parado = pausa hecha
-    if(S.drvCont>0&&S.drvAt&&now-S.drvAt>=45*MIN*1000){S.drvCont=0;for(const k of[...drvSpoken])if(k[0]==="c")drvSpoken.delete(k);save();speak("Llevas cuarenta y cinco minutos parado. Pausa cumplida, contador a cero.");if(sum)computePauses()}
-    if(S.drvDay>0&&S.drvAt&&now-S.drvAt>=9*H*1000){S.drvDay=0;for(const k of[...drvSpoken])if(k[0]==="d")drvSpoken.delete(k);save()}
+    // Parado: 15 min = primera parte; 30 min más tarde (otra parada) o 45 seguidos = pausa hecha
+    if(S.drvAt)checkStop((now-S.drvAt)/1000);
+    if(S.drvDay>0&&S.drvAt&&now-S.drvAt>=9*H*1000){S.drvDay=0;S.split15=false;for(const k of[...drvSpoken])if(k[0]==="d")drvSpoken.delete(k);save()}
     // Cada 10 minutos: ruta de nuevo con el tráfico actual (solo si hay GPS reciente)
     if(sum&&me&&dest&&!busy&&now-lastCalcAt>10*MIN*1000&&now-lastFixAt<15000)refreshRoute();
     if(offerR&&now>offerUntil)clearOffer();
