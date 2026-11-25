@@ -133,6 +133,11 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 .pausemk{width:30px;height:30px;border-radius:50%;background:#7c3aed;color:#fff;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-weight:800;box-shadow:0 2px 6px #0008}
 .poimk{font-size:24px;filter:drop-shadow(0 2px 3px #000a);cursor:pointer}
 .me{width:44px;height:44px;filter:drop-shadow(0 2px 4px #000a)}
+.sig{width:34px;height:34px;border-radius:50%;background:#fff;border:5px solid #dc2626;box-sizing:border-box;display:flex;align-items:center;justify-content:center;font:800 11px system-ui;color:#111;letter-spacing:-.3px;box-shadow:0 1px 5px #0009;cursor:pointer}
+.sig.or{border-color:#f97316}
+.sig.x{width:26px;height:26px;border-width:4px;font-size:9px;opacity:.85}
+.sig svg{width:18px;height:18px}
+button.sec.on{background:#b45309;color:#fff}
 .maplibregl-popup-content{color:#111;font-size:14px;padding:10px 12px;border-radius:12px}
 .maplibregl-popup-content button{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}
 .maplibregl-ctrl-bottom-left{bottom:calc(var(--cardh,0px))}
@@ -217,6 +222,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
     <button class="go" id="bnav">▶ Iniciar</button>
     <button class="sec" id="bfav">⭐ Guardar destino</button>
   </div>
+  <div class="row"><button class="sec" id="badr">☢️ Carga ADR: no</button></div>
   <div class="row"><button class="sec" id="bstops">🅿️ Dónde parar en la ruta</button></div>
   <div class="row"><button class="sec" id="bshare">📤 Compartir ruta</button><button class="sec" id="bgmaps">🗺️ Google Maps</button></div>
   <details><summary id="stepsum">Indicaciones</summary><div id="steps"></div></details>
@@ -274,7 +280,10 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
     <div><label>Peso total (t)</label><input type="number" step="0.1" inputmode="decimal" id="weight"></div>
     <div><label>Peso por eje (t)</label><input type="number" step="0.1" inputmode="decimal" id="axle"></div>
     <div><label>Túnel ADR</label>
-      <select id="adr"><option value="">Sin mercancía peligrosa</option><option>B</option><option>C</option><option>D</option><option>E</option></select>
+      <select id="adr"><option value="">Sin código</option><option>B</option><option>C</option><option>D</option><option>E</option></select>
+    </div>
+    <div><label>Mercancía ADR</label>
+      <select id="adrload"><option value="otherHazmatGeneral">General (inflamables, gases, corrosivos…)</option><option value="otherHazmatExplosive">Explosivos</option><option value="otherHazmatHarmfulToWater">Contamina el agua</option></select>
     </div>
     <div><label>Velocidad máx. (km/h)</label><input type="number" inputmode="numeric" id="maxspd" min="50" max="120"></div>
   </div>
@@ -287,11 +296,17 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
   <h4>Opciones</h4>
   <div class="inl"><input type="checkbox" id="tolls"><label for="tolls">Evitar autopistas de peaje</label></div>
   <div class="inl"><input type="checkbox" id="mute"><label for="mute">Voz silenciada</label></div>
+  <label>Radio y música mientras habla la voz</label>
+  <select id="vmix"><option value="transient">Bajarlas un momento (recomendado)</option><option value="ambient">Mezclar sin bajarlas</option><option value="auto">Lo que haga el teléfono (suele cortarlas)</option></select>
+  <label>Volumen de la voz</label>
+  <input type="range" id="vvol" min="0.2" max="1" step="0.1" style="padding:6px 0">
+  <div class="row"><button class="sec" id="vtest">🔊 Probar la voz</button></div>
+  <div class="note" style="margin-top:4px">En el iPhone la barra de volumen no hace nada: pulsa «Probar la voz» y, mientras habla, sube o baja con los botones del lateral del móvil. Se queda guardado para la próxima vez.</div>
   <div class="inl"><input type="checkbox" id="eco"><label for="eco">Ahorro de batería (mapa plano, sin animaciones)</label></div>
   <div class="row"><button class="go" id="save">Guardar</button></div>
   <h4>Uso de la clave hoy (este teléfono)</h4>
   <div id="usage"></div>
-  <div class="note">El código de túnel ADR sale en la carta de porte. Los avisos de pausa son orientativos: manda siempre tu tacógrafo y la señalización. Comprueba alturas, pesos y restricciones con las señales de la carretera.<br><span id="vertxt"></span></div>
+  <div class="note">El código de túnel ADR sale en la carta de porte; la carga ADR se activa en cada viaje con el botón ☢️ de la ruta. Las señales de gálibo y de prohibido camiones salen de OpenStreetMap (<span id="sigdate">mapa de España</span>): pueden faltar o estar desactualizadas. Los avisos de pausa son orientativos: manda siempre tu tacógrafo y la señalización. Comprueba alturas, pesos y restricciones con las señales de la carretera.<br><span id="vertxt"></span></div>
 </div>
 
 <div class="sheet" id="favs">
@@ -344,7 +359,7 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 
 <script>
 "use strict";
-const VER="3.5";
+const VER="3.6";
 const BETA=location.pathname.indexOf("/beta/")>=0;
 const TT="https://api.tomtom.com";
 const $=id=>document.getElementById(id);
@@ -359,7 +374,8 @@ if(!S){
   S=JSON.parse(JSON.stringify(o));
   S.drvCont=(S.driven||0)*MIN;delete S.driven;
 }
-S=Object.assign({drvCont:0,drvDay:0,drvAt:0,split15:false,split15At:0,mute:false,eco:false,traf:false,maxspd:90,style:"auto",favs:[],tolls:false},S);
+S=Object.assign({drvCont:0,drvDay:0,drvAt:0,split15:false,split15At:0,mute:false,eco:false,traf:false,maxspd:90,style:"auto",favs:[],tolls:false,vvol:1,vmix:"transient"},S);
+if(S.adrOn===undefined)S.adrOn=!!((S.profiles[S.active]||S.profiles[0]||{}).adr);   // antes el ADR del perfil iba siempre
 const save=()=>LS.set("v3",S);
 const prof=()=>S.profiles[S.active]||S.profiles[0];
 // Pausa (normas UE): 45 min seguidos, o partida 15 + 30 en ese orden. Paradas de menos de 15 min no cuentan.
@@ -491,10 +507,10 @@ document.querySelectorAll(".sheet .x").forEach(b=>b.onclick=closeSheets);
 /* ---------- Ajustes y perfiles ---------- */
 const val=id=>parseFloat($(id).value);
 function renderProfSel(){$("psel").innerHTML=S.profiles.map((p,i)=>`<option value="${i}" ${i===S.active?"selected":""}>${esc(p.name)}</option>`).join("")}
-function loadProf(){const p=prof();$("pname").value=p.name;for(const k of["height","width","length","weight","axle"])$(k).value=p[k];$("adr").value=p.adr||""}
+function loadProf(){const p=prof();$("pname").value=p.name;for(const k of["height","width","length","weight","axle"])$(k).value=p[k];$("adr").value=p.adr||"";$("adrload").value=p.adrload||"otherHazmatGeneral"}
 function keyInfo(){const k=S.key||"";$("keyinfo").innerHTML=k?`Clave guardada: <b>••••${esc(k.slice(-4))}</b>. Cada teléfono usa la suya; no se sube a GitHub ni a ningún sitio, solo viaja a TomTom.`:"Sin clave: pega la tuya de developer.tomtom.com"}
 function fillCfg(){$("key").value=S.key;keyInfo();renderProfSel();loadProf();$("maxspd").value=S.maxspd;$("dcont").value=Math.round(S.drvCont/MIN);$("dday").value=Math.round(S.drvDay/MIN);$("d15").checked=!!S.split15;
-  $("tolls").checked=!!S.tolls;$("mute").checked=!!S.mute;$("eco").checked=!!S.eco;renderUso()}
+  $("tolls").checked=!!S.tolls;$("mute").checked=!!S.mute;$("eco").checked=!!S.eco;$("vvol").value=S.vvol;$("vmix").value=S.vmix;renderUso()}
 $("fcfg").onclick=()=>{fillCfg();openSheet("cfg")};
 $("psel").onchange=()=>{S.active=+$("psel").value;save();loadProf()};
 $("pnew").onclick=()=>{const n=prompt("Nombre del nuevo perfil (por ejemplo: Con remolque)");if(!n)return;S.profiles.push({...prof(),name:n.slice(0,30)});S.active=S.profiles.length-1;save();renderProfSel();loadProf()};
@@ -503,13 +519,13 @@ $("save").onclick=()=>{
   const oldKey=S.key;S.key=$("key").value.trim();
   const p=prof();
   for(const k of["height","width","length","weight","axle"]){const x=val(k);if(x>0)p[k]=x}
-  p.name=$("pname").value.trim()||p.name;p.adr=$("adr").value;
+  p.name=$("pname").value.trim()||p.name;p.adr=$("adr").value;p.adrload=$("adrload").value;
   const ms=parseInt($("maxspd").value);if(ms>=50&&ms<=120)S.maxspd=ms;
   const dc=Math.max(0,parseInt($("dcont").value)||0)*MIN,dd=Math.max(0,parseInt($("dday").value)||0)*MIN;
   if(dc!==Math.round(S.drvCont/MIN)*MIN||dd!==Math.round(S.drvDay/MIN)*MIN){S.drvCont=dc;S.drvDay=Math.max(dd,dc);S.drvAt=Date.now();drvSpoken.clear()}
   const s15=$("d15").checked;if(s15!==!!S.split15){S.split15=s15;S.split15At=-1}
   if(sum){computePauses();if(!navOn)renderCard()}
-  S.tolls=$("tolls").checked;S.mute=$("mute").checked;S.eco=$("eco").checked;
+  S.tolls=$("tolls").checked;S.mute=$("mute").checked;S.eco=$("eco").checked;S.vvol=+$("vvol").value||1;S.vmix=$("vmix").value;setAudioMix();
   save();renderProfSel();closeSheets();setMuteBtn();toast("Guardado");
   if(S.key!==oldKey){refreshTraf();if(S.traf)addTraf()}
   if(dest&&shape.length)calc(null,{quiet:navOn});
@@ -569,7 +585,10 @@ document.addEventListener("click",e=>{if(!e.target.closest("#top"))$("sug").styl
 
 /* ---------- Ubicación ---------- */
 const meEl=document.createElement("div");meEl.className="me";
-meEl.innerHTML='<svg viewBox="0 0 44 44" width="44" height="44"><circle cx="22" cy="22" r="20" fill="#2563eb33"/><path d="M22 6 L34 35 L22 28 L10 35 Z" fill="#2563eb" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>';
+meEl.innerHTML='<svg viewBox="0 0 44 44" width="44" height="44"><circle cx="22" cy="22" r="21" fill="#dc262626"/>'+
+  '<rect x="14.5" y="15" width="15" height="25" rx="2" fill="#dc2626" stroke="#fff" stroke-width="2"/>'+     // remolque
+  '<rect x="15.5" y="3" width="13" height="11" rx="3.5" fill="#dc2626" stroke="#fff" stroke-width="2"/>'+    // cabina
+  '<rect x="17.5" y="5" width="9" height="3.2" rx="1" fill="#fff" opacity=".9"/></svg>';                      // parabrisas
 const meMk=new maplibregl.Marker({element:meEl,rotationAlignment:"map",pitchAlignment:"map"});
 function getPos(){return new Promise(res=>{
   if(!navigator.geolocation){res();return}
@@ -634,7 +653,7 @@ function buildQuery(opt){
   for(const s of["speedLimit","lanes","traffic","tollRoad"])q.append("sectionType",s);
   q.append("avoid","unpavedRoads");
   if(S.tolls)q.append("avoid","tollRoads");
-  if(p.adr)q.set("vehicleAdrTunnelRestrictionCode",p.adr);
+  if(S.adrOn){if(p.adr)q.set("vehicleAdrTunnelRestrictionCode",p.adr);q.append("vehicleLoadType",p.adrload||"otherHazmatGeneral")}
   if(opt&&opt.heading!=null)q.set("vehicleHeading",Math.round(opt.heading)%360);
   return q;
 }
@@ -655,7 +674,7 @@ function parseRoute(rt){
 function useRoute(R){
   ({shape,cum,legEnds,ins,insD,spd,lanesS,trafS,sum}=R);
   navIdx=0;offCount=0;remT=sum.travelTimeInSeconds;
-  setRouteSource();computePauses();renderCard();
+  setRouteSource();computePauses();renderCard();signsSoon();
 }
 function apiErr(r,js){return r.status===403||r.status===429?"La clave de TomTom no responde: ¿límite diario agotado?":"No hay ruta: "+((js&&js.error&&js.error.description)||(js&&js.detailedError&&js.detailedError.message)||"revisa la clave y las medidas")}
 
@@ -773,7 +792,10 @@ function renderCard(){
   let w="";
   if(pauseT.length)w+=`<div class="warn">🟣 ${S.split15?"Te faltan los 30 min de la pausa partida:":"Pausa de 45 min (o 15 + 30)"} ${pauseT.map(t=>t<=0?"ya":"dentro de "+fmtT(t)).join(", ")} (cuenta los ${Math.round(S.drvCont/MIN)} min que llevas).</div>`;
   if(S.drvCont>=270*MIN)w+=`<div class="warn">⚠ Con lo que llevas conducido, ya toca parar.</div>`;
+  if(S.adrOn){const p=prof();w+=`<div class="warn">☢️ Ruta para mercancía peligrosa: ${esc(ADRNAME[p.adrload||"otherHazmatGeneral"])}${p.adr?" · túnel "+esc(p.adr):" · sin código de túnel (ponlo en Ajustes)"}</div>`}
+  w+=sigWarn();
   $("warns").innerHTML=w;
+  setAdrBtn();
   $("trafs").innerHTML=trafS.slice(0,6).map(t=>`<div class="tr">${TICON[t.cat]||"⚠️"} <b>${TNAME[t.cat]||"Incidencia"}</b> en el km ${Math.round(cum[t.s]/1000)}${t.delay>60?` · +${fmtT(t.delay)}`:""}</div>`).join("")+(trafS.length>6?`<div class="sub">y ${trafS.length-6} más</div>`:"");
   $("origtxt").innerHTML=origin?`Salida: ${esc(shortName(origin))} · <a class="lnk" id="useme">usar mi ubicación</a>`:"Salida: tu ubicación";
   const u=$("useme");if(u)u.onclick=()=>{origin=null;refreshMarkers();calc()};
@@ -786,7 +808,7 @@ function renderCard(){
 }
 function clearRoute(){
   shape=[];cum=[];ins=[];insD=[];sum=null;dest=null;stops=[];origin=null;legEnds=[];spd=[];lanesS=[];trafS=[];alts=[];altSel=0;
-  pauseMk.forEach(m=>m.remove());pauseMk=[];pauseT=[];clearOffer();clearStopMk();
+  pauseMk.forEach(m=>m.remove());pauseMk=[];pauseT=[];clearOffer();clearStopMk();clearSigns();
   setRouteSource();refreshMarkers();$("card").style.display="none";
   document.documentElement.style.setProperty("--cardh","0px");
 }
@@ -1077,14 +1099,104 @@ async function poiSearch(query,emoji){
   }catch(e){toast("No se pudo buscar (¿sin conexión?)",4000)}
 }
 
+/* ---------- Carga ADR en este viaje ---------- */
+const ADRNAME={otherHazmatGeneral:"mercancía general",otherHazmatExplosive:"explosivos",otherHazmatHarmfulToWater:"contamina el agua"};
+function setAdrBtn(){const b=$("badr");b.textContent="☢️ Carga ADR: "+(S.adrOn?"SÍ":"no");b.classList.toggle("on",!!S.adrOn)}
+$("badr").onclick=()=>{S.adrOn=!S.adrOn;save();setAdrBtn();toast(S.adrOn?"Ruta para mercancía peligrosa"+(prof().adr?" (túnel "+prof().adr+")":""):"Ruta sin mercancía peligrosa");if(dest)calc()};
+setAdrBtn();
+
+/* ---------- Señales: gálibos bajos y prohibido camiones (sacadas de OpenStreetMap, archivos propios en senales/) ---------- */
+// Cuadros de 0,25° publicados junto a la app (no se manda la ruta a nadie). Se cargan los cuadros que toca la ruta. "En la ruta" = la calle va por donde pasa la ruta (voz y aviso);
+// "al lado" = calles que cruzan o salen de la ruta (solo marca pequeña en el mapa, para no meterse).
+const SIGBASE=(BETA?"../":"./")+"senales/s/";let sigIdx=null;const sigTiles=new Map();
+let sigs=[],sigMk=[],sigReq=0,sigKey="",sigTimer=null,sigErr=false;
+function clearSigns(){sigMk.forEach(m=>m.remove());sigMk=[];sigs=[];sigKey="";sigErr=false}
+function signsSoon(){clearTimeout(sigTimer);sigTimer=setTimeout(loadSigns,navOn?500:1500)}
+const nice=n=>String(+n.toFixed(2)).replace(".",",");
+const TRUCK='<svg viewBox="0 0 24 24"><path d="M2 6h12v9H2zM14 9h4l3 3v3h-7z" fill="#111"/><circle cx="6" cy="17" r="2" fill="#111"/><circle cx="17" cy="17" r="2" fill="#111"/></svg>';
+// Índice por celdas de la ruta para buscar rápido el punto de la ruta más cercano
+function routeGrid(){const C=0.004,g=new Map();
+  for(let i=0;i<shape.length-1;i++){const a=shape[i],b=shape[i+1];
+    for(let x=Math.floor(Math.min(a[0],b[0])/C);x<=Math.floor(Math.max(a[0],b[0])/C);x++)for(let y=Math.floor(Math.min(a[1],b[1])/C);y<=Math.floor(Math.max(a[1],b[1])/C);y++){const kk=x+","+y;if(!g.has(kk))g.set(kk,[]);g.get(kk).push(i)}}
+  return p=>{let best={d:Infinity,i:0,f:0};const cx=Math.floor(p[0]/C),cy=Math.floor(p[1]/C);
+    for(let x=cx-1;x<=cx+1;x++)for(let y=cy-1;y<=cy+1;y++){const l=g.get(x+","+y);if(l)for(const i of l){const[d,f]=segInfo(p,i);if(d<best.d)best={d,i,f}}}
+    best.pos=best.d<Infinity?posOf(best):0;return best}}
+async function loadSigns(){
+  if(!shape.length)return;
+  const key=shape.length+":"+Math.round(cum[cum.length-1])+":"+shape[0].join()+":"+prof().height+":"+prof().weight;
+  if(key===sigKey)return;
+  const my=++sigReq;
+  // Cuadros que toca la ruta (con 50 m de margen en los bordes)
+  const cells=new Set(),addC=(lo,la)=>{for(const dx of[-5e-4,5e-4])for(const dy of[-5e-4,5e-4])cells.add(Math.floor((lo+dx)*4)+"_"+Math.floor((la+dy)*4))};
+  for(let i=0;i<shape.length;i++){const a=shape[i];addC(a[0],a[1]);const b=shape[i+1];if(b){const n=Math.floor(hav(a,b)/1500);for(let j=1;j<=n;j++)addC(a[0]+(b[0]-a[0])*j/(n+1),a[1]+(b[1]-a[1])*j/(n+1))}}
+  const els=[];let fail=false;
+  try{
+    if(!sigIdx){const r=await fetch(SIGBASE+"index.json");if(!r.ok)throw 0;const j=await r.json();sigIdx={mapa:j.mapa,set:new Set(j.cuadros)};const sd=$("sigdate");if(sd)sd.textContent="mapa de España del "+j.mapa.split("-").reverse().join("/")}
+    const want=[...cells].filter(c=>sigIdx.set.has(c));
+    await Promise.all(want.map(async c=>{if(!sigTiles.has(c)){const r=await fetch(SIGBASE+c+".json");if(!r.ok)throw 0;sigTiles.set(c,await r.json())}}));
+    const seen=new Set();
+    for(const c of want)for(const e of sigTiles.get(c)){const id=e[5].slice(0,4).join();if(seen.has(id))continue;seen.add(id);els.push(e)}
+  }catch(e){fail=true}
+  if(my!==sigReq)return;
+  if(fail){sigErr=true;if(sum&&!navOn)renderCard();return}
+  sigErr=false;sigKey=key;
+  const p=prof(),near=routeGrid(),out=[];
+  for(const e of els){const[typ,h,w,hgv,road,fl]=e,el={type:typ==="n"?"node":"way"},t={hgv,name:road};
+    const pts=[];for(let i=0;i<fl.length;i+=2)pts.push([fl[i],fl[i+1]]);if(!pts.length)continue;
+    const list=[];
+    if(h&&h<p.height+0.5)list.push({k:"h",v:h,red:h<p.height+0.05,txt:nice(h)+"m",say:`Atención, gálibo de ${nice(h)} metros`,name:`Gálibo ${nice(h)} m`});
+    if(w&&w<p.weight)list.push({k:"w",v:w,red:true,txt:nice(w)+"t",say:`Atención, prohibido camiones de más de ${nice(w)} toneladas`,name:`Prohibido más de ${nice(w)} t`});
+    if(t.hgv==="no")list.push({k:"g",red:true,txt:"",say:"Atención, prohibido el paso de camiones",name:"Prohibido camiones"});
+    else if(t.hgv==="destination"||t.hgv==="delivery")list.push({k:"g",red:false,txt:"",say:"Atención, camiones solo para carga y descarga",name:"Camiones solo carga y descarga"});
+    if(!list.length)continue;
+    // ¿Va por la ruta o solo la toca?
+    let n=0,pmin=Infinity,pmax=-Infinity,bd=Infinity,bp=pts[0];
+    for(const q2 of pts){const r=near(q2);if(r.d<bd){bd=r.d;bp=q2}if(r.d<15){n++;pmin=Math.min(pmin,r.pos);pmax=Math.max(pmax,r.pos)}}
+    const on=el.type==="node"?bd<15:(n>=2&&pmax-pmin>=30);
+    if(!on&&bd>40)continue;
+    const at=on?shape[nearest2(pmin)]:bp;
+    for(const s of list)out.push({...s,on,pos:on?pmin:null,end:on?pmax:null,ll:at,road:t.name||""});
+  }
+  // Juntar tramos seguidos con la misma señal (una calle partida en trozos)
+  out.sort((a,b)=>(a.on===b.on?0:a.on?-1:1)||((a.pos||0)-(b.pos||0)));
+  const res=[];
+  for(const s of out){const prev=res.find(r=>r.k===s.k&&r.txt===s.txt&&r.red===s.red&&(s.on?r.on&&s.pos-r.end<300:!r.on&&hav(r.ll,s.ll)<80));
+    if(prev){if(s.on)prev.end=Math.max(prev.end,s.end)}else res.push(s)}
+  sigs=res.map((s,i)=>({...s,id:i}));drawSigns();if(sum&&!navOn)renderCard();
+}
+function nearest2(pos){let lo=0,hi=cum.length-1;while(lo<hi){const mid=(lo+hi)>>1;if(cum[mid]<pos)lo=mid+1;else hi=mid}return lo}
+function drawSigns(){
+  sigMk.forEach(m=>m.remove());sigMk=[];
+  for(const s of sigs){const el=document.createElement("div");el.className="sig"+(s.red?"":" or")+(s.on?"":" x");el.innerHTML=s.k==="g"?TRUCK:esc(s.txt);
+    const info=`${s.name}${s.road?" · "+s.road:""}${s.on?` · en tu ruta, km ${Math.round(s.pos/1000)}`:" · calle junto a la ruta: no entres"}`;
+    sigMk.push(new maplibregl.Marker({element:el}).setLngLat(s.ll).setPopup(new maplibregl.Popup({offset:18}).setText(info)).addTo(map))}
+}
+function sigWarn(){
+  if(sigErr)return`<div class="sub">Señales de gálibo y prohibiciones: no se han podido cargar ahora.</div>`;
+  const on=sigs.filter(s=>s.on&&s.red),side=sigs.filter(s=>!s.on).length;
+  let w="";
+  if(on.length)w+=`<div class="warn">🚧 Ojo, en la ruta hay ${on.length} señal${on.length>1?"es":""} que no deja${on.length>1?"n":""} pasar a tu camión: ${on.slice(0,4).map(s=>`${esc(s.name)} (km ${Math.round(s.pos/1000)})`).join(", ")}. Mira el mapa y comprueba la señal real.</div>`;
+  const or=sigs.filter(s=>s.on&&!s.red);
+  if(or.length)w+=`<div class="sub">🟠 En la ruta: ${or.slice(0,4).map(s=>`${esc(s.name)} (km ${Math.round(s.pos/1000)})`).join(", ")}</div>`;
+  if(side)w+=`<div class="sub">🚫 ${side} calle${side>1?"s":""} junto a la ruta con gálibo bajo o prohibido camiones (marcas pequeñas en el mapa).</div>`;
+  return w;
+}
+
 /* ---------- Voz ---------- */
 let voice=null;
 function pickVoice(){try{const v=speechSynthesis.getVoices().filter(x=>/^es[-_]ES/i.test(x.lang));voice=v.find(x=>/enhanced|mejorad|premium/i.test(x.name))||v[0]||null}catch(e){}}
 if("speechSynthesis"in window){pickVoice();try{speechSynthesis.onvoiceschanged=pickVoice}catch(e){}}
-function speak(t,force){
+// Safari 17+: "transient" baja la música un momento en vez de cortarla; "ambient" la mezcla sin bajarla
+function setAudioMix(type){try{if(navigator.audioSession)navigator.audioSession.type=type||S.vmix||"transient"}catch(e){}}
+setAudioMix();
+function speak(t,force,vol){
   if(S.mute&&!force)return;
-  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang="es-ES";if(voice)u.voice=voice;speechSynthesis.speak(u)}catch(e){}
+  try{speechSynthesis.cancel();setAudioMix();const u=new SpeechSynthesisUtterance(t);u.lang="es-ES";if(voice)u.voice=voice;u.volume=vol||S.vvol||1;
+    u.onend=u.onerror=()=>{if(S.vmix==="transient")setTimeout(()=>{if(!speechSynthesis.speaking)setAudioMix("ambient")},400)};   // devolver la música a su volumen
+    speechSynthesis.speak(u)}catch(e){}
 }
+$("vtest").onclick=()=>{const m=$("vmix").value,v=+$("vvol").value||1;setAudioMix(m);S.vmix=m;
+  speak("Prueba de voz de Ruta Camión. Si quieres cambiar el volumen, pulsa ahora los botones del lateral del teléfono. En quinientos metros, gire a la derecha. Atención, gálibo de tres coma ocho metros.",true,v)};
 function setMuteBtn(){for(const id of["bmute","fmute"]){const b=$(id);b.textContent=S.mute?"🔇":"🔊";b.classList.toggle("off",!!S.mute)}$("mute").checked=!!S.mute}
 $("fmute").onclick=$("bmute").onclick=()=>{S.mute=!S.mute;save();setMuteBtn();if(S.mute){try{speechSynthesis.cancel()}catch(e){}toast("Voz silenciada")}else speak("Voz activada",true)};
 setMuteBtn();
@@ -1224,6 +1336,10 @@ function onPos(p){
   // Tráfico y obras por delante
   const tr=trafS.find(t=>t.e>bi);
   if(tr){const d=cum[tr.s]-pos;if(d>0&&d<3000)once(spoken,pkey(tr.s,"t"),`Atención: ${(TNAME[tr.cat]||"incidencia").toLowerCase()} en ${fmtD(d)}`+(tr.delay>60?`, unos ${Math.round(tr.delay/60)} minutos de retraso`:""))}
+
+  // Señales por delante (gálibo bajo, prohibido camiones)
+  if(nr.d<=thr)for(const sg of sigs){if(!sg.on)continue;const d=sg.pos-pos;if(d<-30)continue;if(d>((kmh||0)>70?1500:600))break;
+    const sk="sig"+sg.k+sg.ll[0].toFixed(4)+","+sg.ll[1].toFixed(4);if(!spoken.has(sk)){spoken.add(sk);speak(`${sg.say}, ${d>50?"en "+fmtD(d):"ya"}`);toast(`${sg.red?"🚧":"🟠"} ${sg.name}${d>50?" en "+fmtD(d):""}`,7000)}}
 
   // Velocidad y límite (el de la vía, sin pasar del máximo del camión)
   const onRoute=nr.d<=thr,lr=onRoute?limAt(bi):null,lim=lr?Math.min(lr,S.maxspd||90):null;
