@@ -122,6 +122,18 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 .lim{display:none;min-width:48px;height:48px;border:5px solid var(--red);background:#fff;color:#000;border-radius:50%;align-items:center;justify-content:center;font-weight:800;font-size:19px;flex:none}
 #navbtns{display:flex;gap:8px;margin-top:8px}
 #navbtns button{flex:1;padding:10px 6px}
+#plan{display:none}
+body.planmode #plan{display:block}
+body.planmode #card,body.planmode #top,body.planmode #ver{display:none!important}
+#planstep{position:fixed;z-index:6;left:8px;right:8px;top:calc(8px + var(--sat));max-width:560px;margin:0 auto;background:#1e40aff2;border-radius:16px;padding:10px 12px;display:flex;gap:10px;align-items:center;box-shadow:0 4px 20px #0006}
+#planstep b{display:block;font-size:17px;line-height:1.2}
+#planstep small{display:block;opacity:.85;font-size:13px;margin-top:2px}
+#planbot{position:fixed;z-index:6;left:8px;right:8px;bottom:calc(8px + var(--sab));max-width:560px;margin:0 auto;background:#0f172af7;border-radius:18px;padding:10px;box-shadow:0 -4px 24px #0007}
+#planalts{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px}
+#planalts:empty{display:none}
+#planbot .row button{flex:1;padding:10px 6px}
+body.planmode #fabs{top:calc(96px + var(--sat))}
+@media (orientation:landscape) and (max-height:540px){#planstep,#planbot{left:calc(8px + var(--sal));right:auto;width:min(440px,52vw);margin:0}}
 #simbar{display:none;gap:8px;align-items:center;margin-top:8px}
 body.simmode #simbar{display:flex}
 body.simmode #bpausa,body.simmode #nfav{display:none}
@@ -228,11 +240,20 @@ button.sec.on{background:#b45309;color:#fff}
     <button class="go" id="bnav">▶ Iniciar</button>
     <button class="sec" id="bfav">⭐ Guardar destino</button>
   </div>
-  <div class="row"><button class="sec" id="bsim">👁 Ver recorrido (simulación, sin GPS)</button></div>
+  <div class="row"><button class="sec" id="bplan">🗺️ Planificar: ver la ruta en el mapa</button></div>
   <div class="row"><button class="sec" id="badr">☢️ Carga ADR: no</button></div>
   <div class="row"><button class="sec" id="bstops">🅿️ Dónde parar en la ruta</button></div>
   <div class="row"><button class="sec" id="bshare">📤 Compartir ruta</button><button class="sec" id="bgmaps">🗺️ Google Maps</button></div>
   <details><summary id="stepsum">Indicaciones</summary><div id="steps"></div></details>
+</div>
+
+<div id="plan">
+  <div id="planstep"></div>
+  <div id="planbot">
+    <div id="planalts"></div>
+    <div class="row"><button class="sec" id="pprev">◀ Anterior</button><button class="sec" id="pall">🗺️ Toda</button><button class="sec" id="pnext">Siguiente ▶</button></div>
+    <div class="row"><button class="sec" id="psim">▶ Simular</button><button class="go" id="pnav">▶ Iniciar</button><button class="stop" id="pclose">Cerrar</button></div>
+  </div>
 </div>
 
 <div id="nav">
@@ -367,7 +388,7 @@ button.sec.on{background:#b45309;color:#fff}
 
 <script>
 "use strict";
-const VER="3.7";
+const VER="3.8";
 const BETA=location.pathname.indexOf("/beta/")>=0;
 const TT="https://api.tomtom.com";
 const $=id=>document.getElementById(id);
@@ -447,7 +468,7 @@ function ensureLayers(){
   if(!map.getSource("alts"))map.addSource("alts",{type:"geojson",data:altGeo()});
   if(!map.getSource("offer"))map.addSource("offer",{type:"geojson",data:offerGeo()});
   if(!map.getLayer("alt-case"))map.addLayer({id:"alt-case",type:"line",source:"alts",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#1e293b","line-width":11,"line-opacity":.5}});
-  if(!map.getLayer("alt-line"))map.addLayer({id:"alt-line",type:"line",source:"alts",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#94a3b8","line-width":7}});
+  if(!map.getLayer("alt-line"))map.addLayer({id:"alt-line",type:"line",source:"alts",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":["match",["get","i"],0,"#a78bfa",1,"#f59e0b","#f472b6"],"line-width":7,"line-opacity":.85}});
   if(!map.getSource("route"))map.addSource("route",{type:"geojson",data:routeGeo()});
   if(!map.getSource("rtraf"))map.addSource("rtraf",{type:"geojson",data:trafGeo()});
   if(!map.getLayer("route-case"))map.addLayer({id:"route-case",type:"line",source:"route",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#0b1220","line-width":12,"line-opacity":.6}});
@@ -766,7 +787,8 @@ async function refreshRoute(){
 function altGeo(){return{type:"FeatureCollection",features:navOn?[]:alts.map((a,i)=>i===altSel?null:{type:"Feature",geometry:{type:"LineString",coordinates:a.shape},properties:{i}}).filter(Boolean)}}
 function offerGeo(){return{type:"FeatureCollection",features:offerR?[{type:"Feature",geometry:{type:"LineString",coordinates:offerR.shape},properties:{}}]:[]}}
 function drawAlts(){const s=map.getSource("alts");if(s)s.setData(altGeo());const o=map.getSource("offer");if(o)o.setData(offerGeo())}
-function pickAlt(i){if(!alts[i]||i===altSel)return;altSel=i;useRoute(alts[i]);drawAlts();toast(`Ruta ${i+1} elegida`)}
+function altCol(i){return i===altSel?"#3b82f6":["#a78bfa","#f59e0b","#f472b6"][i]||"#94a3b8"}
+function pickAlt(i){if(!alts[i]||i===altSel)return;altSel=i;useRoute(alts[i]);drawAlts();toast(`Ruta ${i+1} elegida`);if(planOn){planI=-1;planAltsUI();planAll()}}
 map.on("click","alt-line",e=>{const f=e.features&&e.features[0];if(f)pickAlt(+f.properties.i)});
 map.on("mouseenter","alt-line",()=>{map.getCanvas().style.cursor="pointer"});
 map.on("mouseleave","alt-line",()=>{map.getCanvas().style.cursor=""});
@@ -793,10 +815,11 @@ function renderCard(){
   const ae=$("alts");
   if(alts.length>1&&!navOn){
     const best=Math.min(...alts.map(a=>a.sum.travelTimeInSeconds));
-    ae.innerHTML=alts.map((a,i)=>{const d=a.sum.travelTimeInSeconds-best;return`<div class="alt${i===altSel?" on":""}" data-i="${i}"><b>${i===altSel?"●":"○"} ${fmtT(a.sum.travelTimeInSeconds)}</b>${d>60?` <span class="slow">+${fmtT(d)}</span>`:i===0?` <span class="fast">la más rápida</span>`:""}<br><small>${fmtD(a.sum.lengthInMeters)}${a.sum.trafficDelayInSeconds>120?` · tráfico +${fmtT(a.sum.trafficDelayInSeconds)}`:""}${a.trafS.length?" · "+trafBadges(a.trafS):""}${a.tolls?" · 💶 peaje":""}</small></div>`}).join("");
+    ae.innerHTML=alts.map((a,i)=>{const d=a.sum.travelTimeInSeconds-best;return`<div class="alt${i===altSel?" on":""}" data-i="${i}"><b><span style="color:${altCol(i)}">${i===altSel?"●":"○"}</span> ${fmtT(a.sum.travelTimeInSeconds)}</b>${d>60?` <span class="slow">+${fmtT(d)}</span>`:i===0?` <span class="fast">la más rápida</span>`:""}<br><small>${fmtD(a.sum.lengthInMeters)}${a.sum.trafficDelayInSeconds>120?` · tráfico +${fmtT(a.sum.trafficDelayInSeconds)}`:""}${a.trafS.length?" · "+trafBadges(a.trafS):""}${a.tolls?" · 💶 peaje":""}</small></div>`}).join("");
     ae.querySelectorAll(".alt").forEach(el=>el.onclick=()=>pickAlt(+el.dataset.i));
     ae.style.display="flex";
   }else{ae.innerHTML="";ae.style.display="none"}
+  try{if(planOn)planAltsUI()}catch(e){}
   let w="";
   if(pauseT.length)w+=`<div class="warn">🟣 ${S.split15?"Te faltan los 30 min de la pausa partida:":"Pausa de 45 min (o 15 + 30)"} ${pauseT.map(t=>t<=0?"ya":"dentro de "+fmtT(t)).join(", ")} (cuenta los ${Math.round(S.drvCont/MIN)} min que llevas).</div>`;
   if(S.drvCont>=270*MIN)w+=`<div class="warn">⚠ Con lo que llevas conducido, ya toca parar.</div>`;
@@ -1252,6 +1275,57 @@ function stopNav(){
 }
 $("bnav").onclick=startNav;
 
+/* ---------- Planificar: la ruta en el mapa, paso a paso a mano ---------- */
+let planOn=false,planPts=[],planI=-1;
+function planBuild(){
+  planPts=[];
+  for(const m of ins){const i=Math.min(m.pointIndex||0,shape.length-1);if(!shape[i])continue;
+    const road=[m.exitNumber?"Salida "+m.exitNumber:"",(m.roadNumbers||[]).join(" · "),m.signpostText||""].filter(Boolean).join(" · ");
+    planPts.push({d:cum[i]||0,ll:shape[i],man:m.maneuver,rex:m.roundaboutExitNumber,txt:m.message||"Sigue recto",road})}
+  for(const g of sigs)if(g.on&&g.pos!=null)planPts.push({d:g.pos,ll:g.ll,sig:g,txt:g.name,road:g.road||""});
+  planPts.sort((a,b)=>a.d-b.d);
+}
+function planBanner(html){$("planstep").innerHTML=html}
+function planAll(){
+  const b=new maplibregl.LngLatBounds();shape.forEach(x=>b.extend(x));alts.forEach(a=>a.shape.forEach(x=>b.extend(x)));
+  if(shape.length)map.fitBounds(b,{padding:{top:110,bottom:($("planbot").offsetHeight||170)+20,left:30,right:70},maxZoom:15,duration:S.eco?0:800});
+  planI=-1;
+  planBanner(`<div style="font-size:30px">🗺️</div><div><b>${fmtD(sum.lengthInMeters)} · ${fmtT(sum.travelTimeInSeconds)}</b><small>Mueve y amplía el mapa con los dedos, o usa Siguiente ▶ para ir cruce a cruce${sigs.some(g=>g.on)?" (también las señales de la ruta)":""}.</small></div>`);
+}
+function planGo(dir){
+  if(!shape.length)return;
+  const cur=planI>=0&&planPts[planI]?planPts[planI].d:(dir>0?-Infinity:Infinity);
+  planBuild();if(!planPts.length)return;
+  let i;
+  if(dir>0){i=planPts.findIndex(p=>p.d>cur+1);if(i<0)i=planPts.length-1}
+  else{i=-1;for(let k=planPts.length-1;k>=0;k--)if(planPts[k].d<cur-1){i=k;break}if(i<0)i=0}
+  planI=i;const p=planPts[i],tot=cum[cum.length-1]||0;
+  follow=false;map.flyTo({center:p.ll,zoom:p.sig?16:15.5,bearing:0,pitch:0,duration:S.eco?0:1100});
+  const ico=p.sig?`<div style="font-size:30px">${p.sig.red?"🚧":"🟠"}</div>`:arrowSVG(p.man,44,"#fff",p.rex);
+  planBanner(`${ico}<div style="min-width:0"><b>${esc(p.txt)}</b><small>${p.road?esc(p.road)+" · ":""}km ${Math.round(p.d/1000)} de ${Math.round(tot/1000)} · ${i+1}/${planPts.length}</small></div>`);
+}
+function planAltsUI(){
+  const pa=$("planalts");
+  if(alts.length>1){pa.innerHTML=$("alts").innerHTML;pa.querySelectorAll(".alt").forEach(el=>el.onclick=()=>pickAlt(+el.dataset.i))}
+  else pa.innerHTML=`<small style="opacity:.75;padding:2px 4px">Para este camión solo sale una ruta.</small>`;
+}
+function openPlan(){
+  if(!shape.length)return;
+  planOn=true;closeSheets();document.body.classList.add("planmode");
+  planAltsUI();planAll();
+}
+function closePlan(){
+  planOn=false;document.body.classList.remove("planmode");
+  if(sum){renderCard();document.documentElement.style.setProperty("--cardh",$("card").offsetHeight+"px")}
+}
+$("bplan").onclick=openPlan;
+$("pclose").onclick=closePlan;
+$("pall").onclick=planAll;
+$("pnext").onclick=()=>planGo(1);
+$("pprev").onclick=()=>planGo(-1);
+$("psim").onclick=()=>{closePlan();startSim()};
+$("pnav").onclick=()=>{closePlan();startNav()};
+
 /* ---------- Ver recorrido: simulación por la ruta, sin GPS ni tacógrafo ---------- */
 let sim=null;const SIMX=[1,5,20,60];
 function simTot(){return cum[cum.length-1]||0}
@@ -1275,7 +1349,7 @@ function startSim(){
   $("simx").textContent="x"+SIMX[sim.x];$("simplay").textContent="⏸";
   keepAwake();simFeed();sim.t=setInterval(simStep,1000);
 }
-$("bsim").onclick=startSim;
+
 $("simplay").onclick=()=>{if(!sim)return;if(sim.d>=simTot())sim.d=0;sim.play=!sim.play;$("simplay").textContent=sim.play?"⏸":"▶"};
 $("simx").onclick=()=>{if(!sim)return;sim.x=(sim.x+1)%SIMX.length;$("simx").textContent="x"+SIMX[sim.x]};
 $("simpos").oninput=()=>{if(!sim)return;sim.d=$("simpos").value/1000*simTot();follow=true;$("brec").style.display="none";simFeed()};
