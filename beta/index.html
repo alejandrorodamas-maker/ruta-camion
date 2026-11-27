@@ -122,6 +122,12 @@ body.navmode #top,body.navmode #fabs,body.navmode #card,body.navmode #ver{displa
 .lim{display:none;min-width:48px;height:48px;border:5px solid var(--red);background:#fff;color:#000;border-radius:50%;align-items:center;justify-content:center;font-weight:800;font-size:19px;flex:none}
 #navbtns{display:flex;gap:8px;margin-top:8px}
 #navbtns button{flex:1;padding:10px 6px}
+#simbar{display:none;gap:8px;align-items:center;margin-top:8px}
+body.simmode #simbar{display:flex}
+body.simmode #bpausa,body.simmode #nfav{display:none}
+#simbar input{flex:1;min-width:0;accent-color:#2563eb}
+#simbar button{flex:none;padding:8px 10px;min-width:52px}
+#simlbl{font-size:12px;opacity:.8;white-space:nowrap}
 #bmute{flex:none!important;width:52px;font-size:20px}
 #bmute.off,#fmute.off{background:#7c2d12}
 #navfabs{pointer-events:auto;position:absolute;right:12px;bottom:calc(150px + var(--sab));display:flex;flex-direction:column;gap:10px}
@@ -222,6 +228,7 @@ button.sec.on{background:#b45309;color:#fff}
     <button class="go" id="bnav">▶ Iniciar</button>
     <button class="sec" id="bfav">⭐ Guardar destino</button>
   </div>
+  <div class="row"><button class="sec" id="bsim">👁 Ver recorrido (simulación, sin GPS)</button></div>
   <div class="row"><button class="sec" id="badr">☢️ Carga ADR: no</button></div>
   <div class="row"><button class="sec" id="bstops">🅿️ Dónde parar en la ruta</button></div>
   <div class="row"><button class="sec" id="bshare">📤 Compartir ruta</button><button class="sec" id="bgmaps">🗺️ Google Maps</button></div>
@@ -252,6 +259,7 @@ button.sec.on{background:#b45309;color:#fff}
       <div class="stat"><b id="nvrem">–</b><small>restan</small></div>
       <div class="stat"><b id="nvdrv">0:00</b><small id="nvday">conducido</small></div>
     </div>
+    <div id="simbar"><button class="sec" id="simplay">⏸</button><button class="sec" id="simx">x20</button><input type="range" id="simpos" min="0" max="1000" value="0" aria-label="Punto del recorrido"><span id="simlbl"></span></div>
     <div id="navbtns">
       <button class="sec" id="bmute" title="Silenciar voz">🔊</button>
       <button class="sec" id="bpausa">Pausa</button>
@@ -359,7 +367,7 @@ button.sec.on{background:#b45309;color:#fff}
 
 <script>
 "use strict";
-const VER="3.6";
+const VER="3.7";
 const BETA=location.pathname.indexOf("/beta/")>=0;
 const TT="https://api.tomtom.com";
 const $=id=>document.getElementById(id);
@@ -1222,6 +1230,7 @@ function once(set,k,txt){if(!set.has(k)){set.add(k);speak(txt)}}
 function showNavUI(){navOn=true;document.body.classList.add("navmode");closeSheets();$("sug").style.display="none";drawAlts()}
 function startNav(){
   if(!shape.length)return;
+  if(origin&&me&&hav([me.lon,me.lat],[origin.lon,origin.lat])>3000&&!confirm("La salida elegida no es donde estás: al navegar, la ruta se calcula desde tu ubicación.\n\nPara ver el trayecto desde la salida, usa «👁 Ver recorrido».\n\n¿Navegar igualmente?"))return;
   rememberTrip();
   speak("Navegación iniciada");          // en el iPhone la voz tiene que arrancar dentro del toque
   nosleep.play().catch(()=>{});
@@ -1233,6 +1242,7 @@ function startNav(){
 }
 function onGpsErr(e){if(e&&e.code===1){toast("Sin permiso de ubicación: actívalo en Ajustes → Safari → Ubicación",6000)}}
 function stopNav(){
+  if(sim){clearInterval(sim.t);me=sim.me;sim=null;spoken.clear();document.body.classList.remove("simmode");lastFix=0;lastPt=null;heading=null}
   navOn=false;if(watchId!=null)navigator.geolocation.clearWatch(watchId);watchId=null;
   document.body.classList.remove("navmode");$("navtop").classList.remove("lost");
   nosleep.pause();if(wake){try{wake.release()}catch(e){}wake=null}
@@ -1241,6 +1251,34 @@ function stopNav(){
   if(sum)document.documentElement.style.setProperty("--cardh",$("card").offsetHeight+"px");
 }
 $("bnav").onclick=startNav;
+
+/* ---------- Ver recorrido: simulación por la ruta, sin GPS ni tacógrafo ---------- */
+let sim=null;const SIMX=[1,5,20,60];
+function simTot(){return cum[cum.length-1]||0}
+function simV(i){return Math.min(80,S.maxspd||90,limAt(i)||80)/3.6}
+function simAt(d){const i=Math.max(0,Math.min(cum.length-2,nearest2(d)-1)),a=shape[i],b=shape[i+1]||a,L=cum[i+1]-cum[i],f=L>0?Math.max(0,Math.min(1,(d-cum[i])/L)):0;
+  return{i,pt:[a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f],h:L>0.5?bearing(a,b):null}}
+function simFeed(){
+  const r=simAt(sim.d);sim.i=r.i;navIdx=r.i;
+  onPos({coords:{latitude:r.pt[1],longitude:r.pt[0],accuracy:5,speed:sim.play?simV(r.i):0,heading:r.h},timestamp:Date.now()});
+  if(!sim)return;   // ha llegado al destino
+  $("simpos").value=Math.round(sim.d/(simTot()||1)*1000);$("simlbl").textContent=fmtD(sim.d);
+  if(sim.d>=simTot()&&sim.play){sim.play=false;$("simplay").textContent="▶"}
+}
+function simStep(){if(!sim)return;if(sim.play)sim.d=Math.min(simTot(),sim.d+simV(sim.i)*SIMX[sim.x]);simFeed()}
+function startSim(){
+  if(!shape.length||cum.length<2)return;
+  speak("Vista previa del recorrido");nosleep.play().catch(()=>{});
+  sim={d:0,i:0,x:2,play:true,me,t:0};spoken.clear();
+  showNavUI();document.body.classList.add("simmode");follow=true;$("brec").style.display="none";
+  navIdx=0;offCount=0;lastFix=0;lastFixAt=Date.now();lastPt=null;heading=null;
+  $("simx").textContent="x"+SIMX[sim.x];$("simplay").textContent="⏸";
+  keepAwake();simFeed();sim.t=setInterval(simStep,1000);
+}
+$("bsim").onclick=startSim;
+$("simplay").onclick=()=>{if(!sim)return;if(sim.d>=simTot())sim.d=0;sim.play=!sim.play;$("simplay").textContent=sim.play?"⏸":"▶"};
+$("simx").onclick=()=>{if(!sim)return;sim.x=(sim.x+1)%SIMX.length;$("simx").textContent="x"+SIMX[sim.x]};
+$("simpos").oninput=()=>{if(!sim)return;sim.d=$("simpos").value/1000*simTot();follow=true;$("brec").style.display="none";simFeed()};
 $("bstop").onclick=stopNav;
 function resetCont(){S.drvCont=0;S.split15=false;for(const k of[...drvSpoken])if(k[0]==="c")drvSpoken.delete(k);save();$("nvdrv").textContent="0:00";drvStat();if(sum){computePauses();if(!navOn)renderCard()}}
 function drvStat(){$("nvday").textContent="hoy "+fmtHM(S.drvDay)+(S.split15?" · 15✓":"")}
@@ -1273,11 +1311,11 @@ function onPos(p){
   kmhNow=kmh;
   const moving=kmh!=null&&kmh>5;
   // Tacógrafo orientativo
-  if(!moving)stillSeen=true;
+  if(sim){}else if(!moving)stillSeen=true;
   else if(stillSeen){stillSeen=false;const g=S.drvAt?(now-S.drvAt)/1000:0;
     // Al arrancar tras una parada que no llega a pausa: avisar (sin voz) de que no cuenta
     if(S.drvCont>0&&g>=3*MIN&&g<45*MIN&&!(g>=15*MIN&&(!S.split15||S.split15At===S.drvAt))&&!second30(g))toast(`Parada de ${Math.round(g/MIN)} min: no cuenta como pausa${S.split15?" (para la segunda parte hacen falta 30 min)":" (mínimo 15 min)"}`,6000)}
-  if(moving&&dt>0&&dt<30){S.drvCont+=dt;S.drvDay+=dt;S.drvAt=now}
+  if(!sim&&moving&&dt>0&&dt<30){S.drvCont+=dt;S.drvDay+=dt;S.drvAt=now}
   if(now-lastSave>60000){lastSave=now;save()}
   // Rumbo
   if(moving&&p.coords.heading!=null&&!isNaN(p.coords.heading)&&p.coords.heading>=0)heading=p.coords.heading;
@@ -1291,14 +1329,14 @@ function onPos(p){
   const thr=Math.max(40,Math.min(150,acc*1.5+20));
   if(nr.d<=thr){offCount=0;navIdx=nr.i}
   else if(acc<=100)offCount++;
-  if(offCount>=3&&now-lastRecalc>15000&&!busy){
+  if(!sim&&offCount>=3&&now-lastRecalc>15000&&!busy){
     lastRecalc=now;offCount=0;$("navtxt").textContent="Recalculando…";speak("Recalculando");
     calc(me,{quiet:true,heading});return;
   }
   const bi=navIdx,pos=nr.d<=thr?posOf(nr):cum[bi],total=cum[cum.length-1]||1,rem=Math.max(0,total-pos);
 
   // Paradas intermedias alcanzadas
-  if(stops.length&&legEnds.length>1){
+  if(!sim&&stops.length&&legEnds.length>1){
     const s=stops[0];
     if(bi>=legEnds[0]-1||hav(pt,[s.lon,s.lat])<60){stops.shift();legEnds.shift();refreshMarkers();speak("Has llegado a la parada");toast("Parada alcanzada: "+shortName(s),5000)}
   }
@@ -1373,7 +1411,7 @@ function onPos(p){
 /* ---------- Tareas periódicas ---------- */
 setInterval(()=>{
   const now=Date.now();
-  if(navOn){
+  if(navOn&&!sim){
     if(now-lastFixAt>15000){$("navtop").classList.add("lost");$("navroad").textContent="⚠ Sin señal GPS";}
     // Parado: 15 min = primera parte; 30 min más tarde (otra parada) o 45 seguidos = pausa hecha
     if(S.drvAt)checkStop((now-S.drvAt)/1000);
